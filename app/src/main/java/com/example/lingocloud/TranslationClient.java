@@ -26,7 +26,7 @@ public class TranslationClient {
 
     // API Endpoints
     private static final String GEMINI_ENDPOINT =
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
     private static final String MICROSOFT_ENDPOINT =
         "https://api.cognitive.microsofttranslator.com/translate";
 
