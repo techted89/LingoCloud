@@ -30,13 +30,6 @@
             app:entryValues="@array/service_provider_values"
             app:iconSpaceReserved="false" />
 
-        <EditTextPreference
-            android:key="api_key"
-            android:title="API Key"
-            android:summary="Enter your API key for the selected service"
-            android:dialogTitle="Enter API Key"
-            app:iconSpaceReserved="false" />
-
         <DropDownPreference
             android:key="target_lang"
             android:title="Target Language"
@@ -44,6 +37,27 @@
             android:defaultValue="en"
             app:entries="@array/languages"
             app:entryValues="@array/language_values"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+    <!-- API Keys -->
+    <PreferenceCategory
+        android:title="API Keys"
+        app:iconSpaceReserved="false">
+
+        <EditTextPreference
+            android:key="gemini_api_key"
+            android:title="Google Gemini API Key"
+            android:summary="Enter your Gemini API key"
+            android:dialogTitle="Gemini API Key"
+            app:iconSpaceReserved="false" />
+
+        <EditTextPreference
+            android:key="microsoft_api_key"
+            android:title="Microsoft Translator API Key"
+            android:summary="Enter your Microsoft Translator API key"
+            android:dialogTitle="Microsoft API Key"
             app:iconSpaceReserved="false" />
 
     </PreferenceCategory>
