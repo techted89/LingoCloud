@@ -1,0 +1,18 @@
+R_DEF: Internal format may change without notice
+local
+array language_values
+array languages
+array service_provider_values
+array service_providers
+color black
+color purple_200
+color purple_500
+color purple_700
+color teal_200
+color teal_700
+color white
+id settings
+layout settings_activity
+string app_name
+style Theme.LingoCloud
+xml root_preferences
