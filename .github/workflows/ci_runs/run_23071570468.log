@@ -1,0 +1,30 @@
+Build (Gradle)	Set up job	﻿2026-03-13T21:39:14.0067291Z Current runner version: '2.332.0'
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0093658Z ##[group]Runner Image Provisioner
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0094549Z Hosted Compute Agent
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0095628Z Version: 20260213.493
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0096242Z Commit: 5c115507f6dd24b8de37d8bbe0bb4509d0cc0fa3
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0096945Z Build Date: 2026-02-13T00:28:41Z
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0097671Z Worker ID: {2aae3700-bd71-48cf-9988-865ecfd5ebf0}
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0098376Z Azure Region: westus
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0098871Z ##[endgroup]
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0100433Z ##[group]Operating System
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0101004Z Ubuntu
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0101499Z 24.04.3
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0101983Z LTS
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0102455Z ##[endgroup]
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0102906Z ##[group]Runner Image
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0103504Z Image: ubuntu-24.04
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0104026Z Version: 20260309.50.1
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0105226Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260309.50/images/ubuntu/Ubuntu2404-Readme.md
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0106958Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260309.50
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0107838Z ##[endgroup]
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0108929Z ##[group]GITHUB_TOKEN Permissions
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0110879Z Contents: read
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0111412Z Metadata: read
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0112026Z Packages: read
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0112494Z ##[endgroup]
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0114498Z Secret source: Actions
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0116074Z Prepare workflow directory
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0448608Z Prepare all required actions
+Build (Gradle)	Set up job	2026-03-13T21:39:14.0488898Z Getting action download info
+Build (Gradle)	Set up job	2026-03-13T21:39:14.6236876Z ##[error]Unable to resolve action r0adkll/setup-android, repository not found

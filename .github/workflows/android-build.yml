@@ -10,6 +10,9 @@ jobs:
   build:
     name: Build (Gradle)
     runs-on: ubuntu-latest
+    env:
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+      ANDROID_HOME: /usr/local/lib/android/sdk
 
     steps:
       - name: Checkout
@@ -37,6 +40,18 @@ jobs:
           platform-tools: true
           cmake: false
           ndk: ""
+
+      - name: Ensure SDK components and accept licenses
+        run: |
+          SDK_ROOT="/usr/local/lib/android/sdk"
+          export ANDROID_SDK_ROOT="$SDK_ROOT"
+          export ANDROID_HOME="$SDK_ROOT"
+          export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/platform-tools:$PATH"
+          set -x
+          # Install required packages (non-interactive)
+          yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0" || true
+          # Accept all licenses
+          yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses || true
 
       - name: Grant execute to gradlew
         run: chmod +x gradlew
