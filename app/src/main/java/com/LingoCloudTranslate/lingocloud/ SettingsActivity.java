@@ -1,4 +1,4 @@
-package com.example.lingocloud;
+package com.LingoCloudTranslate.lingocloud;
 
 import android.content.Intent;
 import android.os.Bundle;
