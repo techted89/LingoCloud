@@ -111,7 +111,7 @@ public class TranslationServer extends Service {
         return new NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("LingoCloud Translator")
             .setContentText("UI translation service is active")
-            .setSmallIcon(android.R.drawable.ic_menu_translate)
+            .setSmallIcon(R.drawable.ic_menu_translate)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)
@@ -127,7 +127,7 @@ public class TranslationServer extends Service {
             Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("LingoCloud Translator")
                 .setContentText(text)
-                .setSmallIcon(android.R.drawable.ic_menu_translate)
+                .setSmallIcon(R.drawable.ic_menu_translate)
                 .setOngoing(true)
                 .setSilent(true)
                 .build();
