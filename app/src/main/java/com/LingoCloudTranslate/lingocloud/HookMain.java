@@ -25,7 +25,7 @@ import java.util.concurrent.Executors;
  */
 public class HookMain implements IXposedHookLoadPackage {
     private static final String TAG = "LingoCloud";
-    private static final String PREFS_PKG = "com.example.lingocloud";
+    private static final String PREFS_PKG = "com.LingoCloudTranslate.lingocloud";
     private static final String PREFS_NAME = "settings";
 
     // Recursion guard tag key - prevents infinite translation loops

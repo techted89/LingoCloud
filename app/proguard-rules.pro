@@ -6,7 +6,8 @@
 -keep class de.robv.android.xposed.callbacks.** { *; }
 
 # Keep hook entry point
--keep class com.example.lingocloud.HookMain {
+# Keep the module entry point so Xposed can find it
+-keep class com.LingoCloudTranslate.lingocloud.HookMain {
     public void handleLoadPackage(...);
 }
 
