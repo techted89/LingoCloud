@@ -29,26 +29,14 @@ jobs:
             ~/.gradle/wrapper
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/gradle-wrapper.properties') }}-${{ hashFiles('**/*.gradle*') }}
 
-      - name: Install Android command-line tools
-        run: |
-          ANDROID_SDK_ROOT="$HOME/Android/Sdk"
-          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
-          curl -sSfL https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -o /tmp/cmdline.zip
-          unzip -q /tmp/cmdline.zip -d /tmp/cmdline
-          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools/latest"
-          mv /tmp/cmdline/cmdline-tools/* "$ANDROID_SDK_ROOT/cmdline-tools/latest/"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
-
-      - name: Install Android SDK components
-        env:
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
-        run: |
-          sdkmanager --version || true
-          yes | sdkmanager --licenses
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "cmdline-tools;latest"
+      - name: Set up Android SDK and components
+        uses: r0adkll/setup-android@v2
+        with:
+          api-level: 35
+          build-tools: 35.0.0
+          platform-tools: true
+          cmake: false
+          ndk: ""
 
       - name: Grant execute to gradlew
         run: chmod +x gradlew
