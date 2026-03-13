@@ -1,4 +1,4 @@
-package com.example.lingocloud;
+package com.LingoCloudTranslate.lingocloud;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
