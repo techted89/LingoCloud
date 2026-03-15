@@ -271,10 +271,9 @@ public class TranslationClient {
                         sb.append(Character.forDigit((c >> 4) & 0xF, 16));
                         sb.append(Character.forDigit(c & 0xF, 16));
                     if (c < 0x20) {
-                        String hex = Integer.toHexString(c);
                         sb.append("\\u00");
-                        if (hex.length() < 2) sb.append('0');
-                        sb.append(hex);
+                        sb.append(Character.forDigit((c >> 4) & 0xF, 16));
+                        sb.append(Character.forDigit(c & 0xF, 16));
                     } else {
                         sb.append(c);
                     }
