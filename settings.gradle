@@ -10,11 +10,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-<<<<<<< HEAD
-        maven { url "https://api.xposed.info/" }
-=======
         maven { url 'https://api.xposed.info/'}
->>>>>>> main
+
     }
 }
 
