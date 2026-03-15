@@ -5,19 +5,3 @@ plugins {
 }
 
 // Global Termux AAPT2 Fix for all sub-modules
-subprojects {
-    afterEvaluate { project ->
-        if (project.hasProperty('android')) {
-            project.tasks.withType(com.android.build.gradle.tasks.ProcessAndroidResources).configureEach {
-                try {
-                    it.aapt2Executable.set(file("/data/data/com.termux/files/usr/bin/aapt2"))
-                } catch (Exception e) {
-                    // Fallback for older AGP versions if needed
-                    if (it.hasProperty('aapt2FromMaven')) {
-                        it.aapt2FromMaven.setFrom(file("/data/data/com.termux/files/usr/bin/aapt2"))
-                    }
-                }
-            }
-        }
-    }
-}

@@ -37,8 +37,8 @@ lingocloud/
 │   └── src/main/
 │       ├── AndroidManifest.xml         # Xposed metadata & permissions
 │       ├── assets/
-│       │   └── xposed_init             # Entry point: com.example.lingocloud.HookMain
-│       ├── java/com/example/lingocloud/
+│       │   └── xposed_init             # Entry point: com.LingoCloudTranslate.lingocloud.HookMain
+│       ├── java/com/LingoCloudTranslate/lingocloud/
 │       │   ├── HookMain.java           # Main Xposed hook implementation
 │       │   ├── TranslationClient.java  # HTTP client for Gemini & Microsoft APIs
 │       │   ├── TranslationServer.java  # Foreground Service (Android 15 FGS)
@@ -60,7 +60,7 @@ lingocloud/
 ### Prerequisites
 
 - Android Studio Hedgehog (2023.1.1) or newer
-- JDK 11 or higher
+- JDK 17 or higher (CI uses JDK 17)
 - Android SDK 35
 
 ### Build Steps
@@ -75,6 +75,18 @@ lingocloud/
 ```bash
 ./gradlew assembleRelease
 ```
+
+## Continuous Integration (GitHub Actions)
+
+This repository includes a GitHub Actions workflow at `.github/workflows/android-build.yml` that builds the Android APK using the runner's Android SDK and Temurin JDK 17.
+
+Key points:
+- The workflow uses `actions/setup-java` to provide Java 17.
+- The Android SDK packages are installed via `sdkmanager` on the runner.
+- Artifacts (`app-release.apk`) are uploaded as a workflow artifact on success.
+
+To enable CI builds, just push to `main` or open a pull request targeting `main` — the workflow runs automatically.
+
 
 ## Installation
 
