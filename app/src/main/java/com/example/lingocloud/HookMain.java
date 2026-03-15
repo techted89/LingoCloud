@@ -190,26 +190,28 @@ public class HookMain implements IXposedHookLoadPackage {
         // Skip if text doesn't meet criteria
         if (!shouldTranslate(original)) return;
 
-        // Recursion Guard: Don't re-translate our own work
-        if (textView.getTag(TAG_KEY_TRANSLATED) != null) {
-            return;
-        }
-
         // Check local cache first
         String cachedResult = translationCache.get(original);
         if (cachedResult != null) {
             param.args[0] = cachedResult;
-            textView.setTag(TAG_KEY_TRANSLATED, true);
+            textView.setTag(TAG_KEY_TRANSLATED, cachedResult);
+            return;
+        }
+
+        // Recursion Guard: Don't re-translate our own work
+        Object lastTranslated = textView.getTag(TAG_KEY_TRANSLATED);
+        if (lastTranslated != null && lastTranslated.equals(original)) {
             return;
         }
 
         // Get translation settings
         String service = prefs.getString("service_provider", "Gemini");
-        String apiKey = prefs.getString("api_key", "");
+        String apiKeyKey = service.equals("Gemini") ? "gemini_api_key" : "microsoft_api_key";
+        String apiKey = prefs.getString(apiKeyKey, "");
         String targetLang = prefs.getString("target_lang", "en");
 
         if (apiKey.isEmpty()) {
-            Log.w(TAG, "API key not configured");
+            Log.w(TAG, "API key for " + service + " not configured");
             return;
         }
 
@@ -223,7 +225,7 @@ public class HookMain implements IXposedHookLoadPackage {
 
                     // Update UI on main thread
                     mainHandler.post(() -> {
-                        textView.setTag(TAG_KEY_TRANSLATED, true);
+                        textView.setTag(TAG_KEY_TRANSLATED, result);
                         textView.setText(result);
                     });
                 }
