@@ -4,7 +4,7 @@
 
     <!-- Service Providers -->
     <string-array name="service_providers">
-        <item>Google Gemini 1.5 Flash</item>
+        <item>Google Gemini 2.0 Flash</item>
         <item>Microsoft Translator</item>
     </string-array>
 

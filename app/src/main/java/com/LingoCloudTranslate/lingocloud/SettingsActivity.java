@@ -63,6 +63,8 @@ public class SettingsActivity extends AppCompatActivity {
 
         @Override
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
+            getPreferenceManager().setSharedPreferencesName(PREF_FILE);
+            getPreferenceManager().setSharedPreferencesMode(android.content.Context.MODE_WORLD_READABLE);
             setPreferencesFromResource(R.xml.root_preferences, rootKey);
 
             // Initialize encrypted preferences
@@ -75,6 +77,25 @@ public class SettingsActivity extends AppCompatActivity {
             setupTargetLanguage();
             setupAppWhitelist();
             setupTestConnection();
+        }
+
+        @Override
+        public void onPause() {
+            super.onPause();
+            // Make preferences readable by Xposed module
+            try {
+                java.io.File prefsDir = new java.io.File(requireContext().getApplicationInfo().dataDir, "shared_prefs");
+                java.io.File prefsFile = new java.io.File(prefsDir, PREF_FILE + ".xml");
+                if (prefsDir.exists()) {
+                    prefsDir.setExecutable(true, false);
+                    prefsDir.setReadable(true, false);
+                }
+                if (prefsFile.exists()) {
+                    prefsFile.setReadable(true, false);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to set preference permissions", e);
+            }
         }
 
         private void initEncryptedPreferences() {
@@ -120,7 +141,12 @@ public class SettingsActivity extends AppCompatActivity {
         }
 
         private void setupApiKeyInput() {
-            EditTextPreference apiKeyPref = findPreference("api_key");
+            setupSpecificApiKeyInput("gemini_api_key");
+            setupSpecificApiKeyInput("microsoft_api_key");
+        }
+
+        private void setupSpecificApiKeyInput(String prefKey) {
+            EditTextPreference apiKeyPref = findPreference(prefKey);
             if (apiKeyPref != null) {
                 // Mask the API key input
                 apiKeyPref.setOnBindEditTextListener(editText -> {
@@ -145,7 +171,7 @@ public class SettingsActivity extends AppCompatActivity {
                     if (key != null && !key.trim().isEmpty()) {
                         // Also store in encrypted prefs for extra security
                         if (encryptedPrefs != null) {
-                            encryptedPrefs.edit().putString("encrypted_api_key", key).apply();
+                            encryptedPrefs.edit().putString("encrypted_" + prefKey, key).apply();
                         }
                         Toast.makeText(requireContext(),
                             "API Key saved securely", Toast.LENGTH_SHORT).show();
@@ -200,16 +226,17 @@ public class SettingsActivity extends AppCompatActivity {
             String service = getPreferenceManager()
                 .getSharedPreferences()
                 .getString("service_provider", "Gemini");
+            String apiKeyKey = service.equals("Gemini") ? "gemini_api_key" : "microsoft_api_key";
             String apiKey = getPreferenceManager()
                 .getSharedPreferences()
-                .getString("api_key", "");
+                .getString(apiKeyKey, "");
             String targetLang = getPreferenceManager()
                 .getSharedPreferences()
                 .getString("target_lang", "en");
 
             if (apiKey.isEmpty()) {
                 Toast.makeText(requireContext(),
-                    "Please enter an API key first", Toast.LENGTH_LONG).show();
+                    "Please enter an API key for " + service + " first", Toast.LENGTH_LONG).show();
                 return;
             }
 

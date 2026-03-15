@@ -5,7 +5,7 @@ A production-grade Xposed Module for real-time UI translation on Android 15 (SDK
 ## Features
 
 - **Real-time Translation**: Intercepts and translates UI text in any app
-- **Dual API Support**: Google Gemini 1.5 Flash & Microsoft Azure Translator
+- **Dual API Support**: Google Gemini 2.0 Flash & Microsoft Azure Translator
 - **Android 15 Compatible**: Built for SDK 35 with proper foreground service handling
 - **Encrypted Storage**: API keys stored securely using Android Keystore
 - **Smart Caching**: LRU cache prevents repeated API calls
@@ -145,7 +145,8 @@ adb install -r app/build/outputs/apk/release/app-release.apk
 |---------|-------------|---------|
 | `module_enabled` | Master toggle for translation | `true` |
 | `service_provider` | API to use (Gemini/Microsoft) | `Gemini` |
-| `api_key` | Your API key (encrypted) | `""` |
+| `gemini_api_key` | Your Gemini API key (encrypted) | `""` |
+| `microsoft_api_key` | Your Microsoft API key (encrypted) | `""` |
 | `target_lang` | Output language code | `en` |
 | `app_whitelist` | Comma-separated package names | `""` (all apps) |
 

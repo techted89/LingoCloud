@@ -1,0 +1,11 @@
+--- app/src/main/java/com/example/lingocloud/SettingsActivity.java
++++ app/src/main/java/com/example/lingocloud/SettingsActivity.java
+@@ -64,7 +64,7 @@
+         @Override
+         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
+             getPreferenceManager().setSharedPreferencesName(PREF_FILE);
+-            getPreferenceManager().setSharedPreferencesMode(MODE_WORLD_READABLE);
++            getPreferenceManager().setSharedPreferencesMode(android.content.Context.MODE_WORLD_READABLE);
+             setPreferencesFromResource(R.xml.root_preferences, rootKey);
+
+             // Initialize encrypted preferences
