@@ -228,6 +228,18 @@ public class TranslationClient {
     private String escapeJson(String input) {
         if (input == null) return null;
         int len = input.length();
+
+        // Fast-path: check if escaping is actually needed
+        boolean needsEscaping = false;
+        for (int i = 0; i < len; i++) {
+            char c = input.charAt(i);
+            if (c == '\\' || c == '"' || c < 0x20) {
+                needsEscaping = true;
+                break;
+            }
+        }
+        if (!needsEscaping) return input;
+
         StringBuilder sb = new StringBuilder(len + (len >> 4));
         for (int i = 0; i < len; i++) {
             char c = input.charAt(i);
@@ -258,6 +270,11 @@ public class TranslationClient {
                         sb.append("\\u00");
                         sb.append(Character.forDigit((c >> 4) & 0xF, 16));
                         sb.append(Character.forDigit(c & 0xF, 16));
+                    if (c < 0x20) {
+                        String hex = Integer.toHexString(c);
+                        sb.append("\\u00");
+                        if (hex.length() < 2) sb.append('0');
+                        sb.append(hex);
                     } else {
                         sb.append(c);
                     }
