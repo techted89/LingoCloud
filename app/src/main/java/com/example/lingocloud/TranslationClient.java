@@ -226,13 +226,60 @@ public class TranslationClient {
      * Escape special characters for JSON strings
      */
     private String escapeJson(String input) {
-        return input
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\b", "\\b")
-            .replace("\f", "\\f")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t");
+        if (input == null) return null;
+        int len = input.length();
+
+        // Fast-path: check if escaping is actually needed
+        boolean needsEscaping = false;
+        for (int i = 0; i < len; i++) {
+            char c = input.charAt(i);
+            if (c == '\\' || c == '"' || c < 0x20) {
+                needsEscaping = true;
+                break;
+            }
+        }
+        if (!needsEscaping) return input;
+
+        StringBuilder sb = new StringBuilder(len + (len >> 4));
+        for (int i = 0; i < len; i++) {
+            char c = input.charAt(i);
+            switch (c) {
+                case '\\':
+                    sb.append("\\\\");
+                    break;
+                case '"':
+                    sb.append("\\\"");
+                    break;
+                case '\b':
+                    sb.append("\\b");
+                    break;
+                case '\f':
+                    sb.append("\\f");
+                    break;
+                case '\n':
+                    sb.append("\\n");
+                    break;
+                case '\r':
+                    sb.append("\\r");
+                    break;
+                case '\t':
+                    sb.append("\\t");
+                    break;
+                default:
+                    if (c <= 0x1F) {
+                        sb.append("\\u00");
+                        sb.append(Character.forDigit((c >> 4) & 0xF, 16));
+                        sb.append(Character.forDigit(c & 0xF, 16));
+                    if (c < 0x20) {
+                        String hex = Integer.toHexString(c);
+                        sb.append("\\u00");
+                        if (hex.length() < 2) sb.append('0');
+                        sb.append(hex);
+                    } else {
+                        sb.append(c);
+                    }
+            }
+        }
+        return sb.toString();
     }
 }
