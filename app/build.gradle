@@ -40,6 +40,16 @@ dependencies {
 
     // Xposed API - MUST be compileOnly (provided by LSPosed at runtime)
     compileOnly 'de.robv.android.xposed:api:82'
+
+    // Testing
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.mockito:mockito-core:5.3.1'
+}
+
+android {
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
 }
 
 /* AAPT2/workaround placeholder for CI runners */
