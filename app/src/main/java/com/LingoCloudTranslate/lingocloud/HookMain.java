@@ -29,7 +29,7 @@ public class HookMain implements IXposedHookLoadPackage {
     private static final String PREFS_NAME = "settings";
 
     // Recursion guard tag key - prevents infinite translation loops
-    private static final int TAG_KEY_TRANSLATED = 0xDEAFBEEF;
+    private static final String TRANSLATED_FIELD = "lingocloud_translated";
 
     // Minimum text length to translate (skip single chars/icons)
     private static final int MIN_TEXT_LENGTH = 2;
@@ -45,12 +45,20 @@ public class HookMain implements IXposedHookLoadPackage {
 
     // Memory cache to avoid repeated API calls (500 entries)
     private static final LruCache<String, String> translationCache = new LruCache<>(500);
+    private static final Object cacheLock = new Object();
 
     // Thread pool for async translation (prevents UI blocking)
     private static final ExecutorService executor = Executors.newFixedThreadPool(3);
 
     // Main thread handler for UI updates
-    private static final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private static Handler mainHandler;
+
+    private static synchronized Handler getMainHandler() {
+        if (mainHandler == null) {
+            mainHandler = new Handler(Looper.getMainLooper());
+        }
+        return mainHandler;
+    }
 
     // Blacklisted packages (system apps that shouldn't be hooked)
     private static final Set<String> BLACKLISTED_PACKAGES = new HashSet<String>() {{
@@ -157,7 +165,10 @@ public class HookMain implements IXposedHookLoadPackage {
                         if (!shouldTranslate(original)) return;
 
                         // Check cache first
-                        String cached = translationCache.get(original);
+                        String cached;
+                        synchronized (cacheLock) {
+                            cached = translationCache.get(original);
+                        }
                         if (cached != null) {
                             XposedHelpers.setObjectField(param.thisObject, "mText", cached);
                         }
@@ -191,15 +202,18 @@ public class HookMain implements IXposedHookLoadPackage {
         if (!shouldTranslate(original)) return;
 
         // Check local cache first
-        String cachedResult = translationCache.get(original);
+        String cachedResult;
+        synchronized (cacheLock) {
+            cachedResult = translationCache.get(original);
+        }
         if (cachedResult != null) {
             param.args[0] = cachedResult;
-            textView.setTag(TAG_KEY_TRANSLATED, cachedResult);
+            XposedHelpers.setAdditionalInstanceField(textView, TRANSLATED_FIELD, cachedResult);
             return;
         }
 
         // Recursion Guard: Don't re-translate our own work
-        Object lastTranslated = textView.getTag(TAG_KEY_TRANSLATED);
+        Object lastTranslated = XposedHelpers.getAdditionalInstanceField(textView, TRANSLATED_FIELD);
         if (lastTranslated != null && lastTranslated.equals(original)) {
             return;
         }
@@ -221,11 +235,13 @@ public class HookMain implements IXposedHookLoadPackage {
             client.translate(textToTranslate, service, apiKey, targetLang, result -> {
                 if (result != null && !result.isEmpty()) {
                     // Cache the result
-                    translationCache.put(textToTranslate, result);
+                    synchronized (cacheLock) {
+                        translationCache.put(textToTranslate, result);
+                    }
 
                     // Update UI on main thread
-                    mainHandler.post(() -> {
-                        textView.setTag(TAG_KEY_TRANSLATED, result);
+                    getMainHandler().post(() -> {
+                        XposedHelpers.setAdditionalInstanceField(textView, TRANSLATED_FIELD, result);
                         textView.setText(result);
                     });
                 }
@@ -245,8 +261,12 @@ public class HookMain implements IXposedHookLoadPackage {
         // Skip very long text (prevent API abuse)
         if (text.length() > MAX_TEXT_LENGTH) return false;
 
-        // Skip if already in cache (handled separately)
-        if (translationCache.get(text) != null) return true;
+        // Allow cached entry: return true so caller can use cached result
+        boolean inCache;
+        synchronized (cacheLock) {
+            inCache = translationCache.get(text) != null;
+        }
+        if (inCache) return true;
 
         // Skip numeric-only text
         if (text.matches("^[0-9,.]+$")) return false;

@@ -15,18 +15,23 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import com.google.genai.Client;
+import com.google.genai.types.GenerateContentConfig;
+import com.google.genai.types.GenerateContentResponse;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 /**
  * TranslationClient - Cloud API Bridge for LingoCloud
- * Supports: Google Gemini 1.5 Flash & Microsoft Azure Translator
+ * Supports: Google Gemini 2.5 Flash & Microsoft Azure Translator
  * Android 15 (SDK 35) Compatible
  */
-public class TranslationClient {
+public class TranslationClient implements AutoCloseable {
     private static final String TAG = "LingoCloud";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
     // API Endpoints
-    private static final String GEMINI_ENDPOINT =
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
     private static final String MICROSOFT_ENDPOINT =
         "https://api.cognitive.microsofttranslator.com/translate";
 
@@ -37,8 +42,26 @@ public class TranslationClient {
         .writeTimeout(10, TimeUnit.SECONDS)
         .build();
 
+    private final ExecutorService executor = Executors.newFixedThreadPool(2);
+
+    private volatile Client genaiClient;
+    private String cachedApiKey;
+
     public interface TranslationCallback {
         void onResult(String translatedText);
+    }
+
+    private void deliverResult(TranslationCallback callback, String result) {
+        callback.onResult(result);
+    }
+
+    public void shutdown() {
+        executor.shutdown();
+    }
+
+    @Override
+    public void close() {
+        shutdown();
     }
 
     /**
@@ -54,13 +77,13 @@ public class TranslationClient {
                          @NonNull TranslationCallback callback) {
 
         if (text.trim().isEmpty()) {
-            callback.onResult(text);
+            deliverResult(callback, text);
             return;
         }
 
         if (apiKey.trim().isEmpty()) {
             Log.w(TAG, "API key is empty, skipping translation");
-            callback.onResult(null);
+            deliverResult(callback, null);
             return;
         }
 
@@ -73,87 +96,55 @@ public class TranslationClient {
                 break;
             default:
                 Log.e(TAG, "Unknown service: " + service);
-                callback.onResult(null);
+                deliverResult(callback, null);
         }
     }
 
     /**
-     * Google Gemini 1.5 Flash API Call
-     * Optimized for low-latency UI translation
+     * Google GenAI API Call
+     * Uses the official GenAI SDK to replace legacy REST API
      */
     private void callGemini(@NonNull String text, @NonNull String apiKey,
                            @NonNull String targetLang, @NonNull TranslationCallback callback) {
-
-        String url = GEMINI_ENDPOINT + "?key=" + apiKey;
 
         // Construct prompt for UI translation
         String prompt = String.format(
             "Translate the following UI text to %s. " +
             "Return ONLY the translated text without quotes, explanations, or formatting: %s",
-            targetLang, escapeJson(text)
+            targetLang, text
         );
 
-        JSONObject part = new JSONObject();
-        JSONObject content = new JSONObject();
-        JSONObject payload = new JSONObject();
-
-        try {
-            part.put("text", prompt);
-            content.put("parts", new JSONArray().put(part));
-            payload.put("contents", new JSONArray().put(content));
-
-            // Configure for faster response
-            JSONObject generationConfig = new JSONObject();
-            generationConfig.put("temperature", 0.1);
-            generationConfig.put("maxOutputTokens", 256);
-            payload.put("generationConfig", generationConfig);
-
-        } catch (JSONException e) {
-            Log.e(TAG, "Failed to build Gemini request", e);
-            callback.onResult(null);
-            return;
-        }
-
-        RequestBody body = RequestBody.create(payload.toString(), JSON);
-        Request request = new Request.Builder()
-            .url(url)
-            .post(body)
-            .header("Content-Type", "application/json")
-            .build();
-
-        client.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                Log.e(TAG, "Gemini API request failed", e);
-                callback.onResult(null);
-            }
-
-            @Override
-            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                if (!response.isSuccessful()) {
-                    Log.e(TAG, "Gemini API error: " + response.code());
-                    callback.onResult(null);
-                    return;
+        executor.execute(() -> {
+            try {
+                if (genaiClient == null || !apiKey.equals(cachedApiKey)) {
+                    synchronized (this) {
+                        if (genaiClient == null || !apiKey.equals(cachedApiKey)) {
+                            genaiClient = Client.builder().apiKey(apiKey).build();
+                            cachedApiKey = apiKey;
+                        }
+                    }
                 }
 
-                try {
-                    String responseBody = response.body().string();
-                    JSONObject json = new JSONObject(responseBody);
+                GenerateContentConfig config = GenerateContentConfig.builder()
+                    .temperature(0.1f)
+                    .maxOutputTokens(256)
+                    .build();
 
-                    String result = json
-                        .getJSONArray("candidates")
-                        .getJSONObject(0)
-                        .getJSONObject("content")
-                        .getJSONArray("parts")
-                        .getJSONObject(0)
-                        .getString("text");
+                GenerateContentResponse response = genaiClient.models.generateContent(
+                    "gemini-2.5-flash",
+                    prompt,
+                    config
+                );
 
-                    callback.onResult(result.trim());
-
-                } catch (JSONException e) {
-                    Log.e(TAG, "Failed to parse Gemini response", e);
-                    callback.onResult(null);
+                if (response != null && response.text() != null) {
+                    deliverResult(callback, response.text().trim());
+                } else {
+                    Log.e(TAG, "Gemini API returned empty response");
+                    deliverResult(callback, null);
                 }
+            } catch (Exception e) {
+                Log.e(TAG, "Gemini API request failed via GenAI SDK", e);
+                deliverResult(callback, null);
             }
         });
     }
@@ -174,7 +165,7 @@ public class TranslationClient {
             payload.put(textObj);
         } catch (JSONException e) {
             Log.e(TAG, "Failed to build Microsoft request", e);
-            callback.onResult(null);
+            deliverResult(callback, null);
             return;
         }
 
@@ -191,14 +182,14 @@ public class TranslationClient {
             @Override
             public void onFailure(@NonNull Call call, @NonNull IOException e) {
                 Log.e(TAG, "Microsoft API request failed", e);
-                callback.onResult(null);
+                deliverResult(callback, null);
             }
 
             @Override
             public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                 if (!response.isSuccessful()) {
                     Log.e(TAG, "Microsoft API error: " + response.code());
-                    callback.onResult(null);
+                    deliverResult(callback, null);
                     return;
                 }
 
@@ -212,22 +203,13 @@ public class TranslationClient {
                         .getJSONObject(0)
                         .getString("text");
 
-                    callback.onResult(result);
+                    deliverResult(callback, result);
 
                 } catch (JSONException e) {
                     Log.e(TAG, "Failed to parse Microsoft response", e);
-                    callback.onResult(null);
+                    deliverResult(callback, null);
                 }
             }
         });
-    }
-
-    /**
-     * Escape special characters for JSON strings
-     */
-    private String escapeJson(String input) {
-        if (input == null) return null;
-        String quoted = JSONObject.quote(input);
-        return quoted.substring(1, quoted.length() - 1);
     }
 }
