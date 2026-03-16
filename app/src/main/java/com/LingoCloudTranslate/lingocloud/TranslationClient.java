@@ -26,7 +26,7 @@ public class TranslationClient {
 
     // API Endpoints
     private static final String GEMINI_ENDPOINT =
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
     private static final String MICROSOFT_ENDPOINT =
         "https://api.cognitive.microsofttranslator.com/translate";
 
@@ -227,58 +227,7 @@ public class TranslationClient {
      */
     private String escapeJson(String input) {
         if (input == null) return null;
-        int len = input.length();
-
-        // Fast-path: check if escaping is actually needed
-        boolean needsEscaping = false;
-        for (int i = 0; i < len; i++) {
-            char c = input.charAt(i);
-            if (c == '\\' || c == '"' || c < 0x20) {
-                needsEscaping = true;
-                break;
-            }
-        }
-        if (!needsEscaping) return input;
-
-        StringBuilder sb = new StringBuilder(len + (len >> 4));
-        for (int i = 0; i < len; i++) {
-            char c = input.charAt(i);
-            switch (c) {
-                case '\\':
-                    sb.append("\\\\");
-                    break;
-                case '"':
-                    sb.append("\\\"");
-                    break;
-                case '\b':
-                    sb.append("\\b");
-                    break;
-                case '\f':
-                    sb.append("\\f");
-                    break;
-                case '\n':
-                    sb.append("\\n");
-                    break;
-                case '\r':
-                    sb.append("\\r");
-                    break;
-                case '\t':
-                    sb.append("\\t");
-                    break;
-                default:
-                    if (c <= 0x1F) {
-                        sb.append("\\u00");
-                        sb.append(Character.forDigit((c >> 4) & 0xF, 16));
-                        sb.append(Character.forDigit(c & 0xF, 16));
-                    if (c < 0x20) {
-                        sb.append("\\u00");
-                        sb.append(Character.forDigit((c >> 4) & 0xF, 16));
-                        sb.append(Character.forDigit(c & 0xF, 16));
-                    } else {
-                        sb.append(c);
-                    }
-            }
-        }
-        return sb.toString();
+        String quoted = JSONObject.quote(input);
+        return quoted.substring(1, quoted.length() - 1);
     }
 }
