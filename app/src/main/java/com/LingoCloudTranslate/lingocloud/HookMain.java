@@ -235,13 +235,13 @@ public class HookMain implements IXposedHookLoadPackage {
             client.translate(textToTranslate, service, apiKey, targetLang, result -> {
                 if (result != null && !result.isEmpty()) {
                     // Cache the result
-                        synchronized (cacheLock) {
-                            translationCache.put(textToTranslate, result);
-                        }
+                    synchronized (cacheLock) {
+                        translationCache.put(textToTranslate, result);
+                    }
 
                     // Update UI on main thread
-                        getMainHandler().post(() -> {
-                            XposedHelpers.setAdditionalInstanceField(textView, TRANSLATED_FIELD, result);
+                    getMainHandler().post(() -> {
+                        XposedHelpers.setAdditionalInstanceField(textView, TRANSLATED_FIELD, result);
                         textView.setText(result);
                     });
                 }

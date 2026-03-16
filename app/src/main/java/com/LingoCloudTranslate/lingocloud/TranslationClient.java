@@ -44,6 +44,9 @@ public class TranslationClient implements AutoCloseable {
 
     private final ExecutorService executor = Executors.newFixedThreadPool(2);
 
+    private volatile Client genaiClient;
+    private String cachedApiKey;
+
     public interface TranslationCallback {
         void onResult(String translatedText);
     }
@@ -113,7 +116,14 @@ public class TranslationClient implements AutoCloseable {
 
         executor.execute(() -> {
             try {
-                Client genaiClient = Client.builder().apiKey(apiKey).build();
+                if (genaiClient == null || !apiKey.equals(cachedApiKey)) {
+                    synchronized (this) {
+                        if (genaiClient == null || !apiKey.equals(cachedApiKey)) {
+                            genaiClient = Client.builder().apiKey(apiKey).build();
+                            cachedApiKey = apiKey;
+                        }
+                    }
+                }
 
                 GenerateContentConfig config = GenerateContentConfig.builder()
                     .temperature(0.1f)
@@ -193,22 +203,13 @@ public class TranslationClient implements AutoCloseable {
                         .getJSONObject(0)
                         .getString("text");
 
-                    callback.onResult(result);
+                    deliverResult(callback, result);
 
                 } catch (JSONException e) {
                     Log.e(TAG, "Failed to parse Microsoft response", e);
-                    callback.onResult(null);
+                    deliverResult(callback, null);
                 }
             }
         });
-    }
-
-    /**
-     * Escape special characters for JSON strings
-     */
-    private String escapeJson(String input) {
-        if (input == null) return null;
-        String quoted = JSONObject.quote(input);
-        return quoted.substring(1, quoted.length() - 1);
     }
 }
