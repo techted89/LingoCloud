@@ -47,8 +47,7 @@ jobs:
           keyPassword: ${{ secrets.KEY_PASSWORD }}
 
       # 3. Build JAR/Other Artifacts
-      - name: Build Other Artifacts
-        run: ./gradlew build -x test
+      
 
       # 4. Upload Artifacts (The Zip)
       - name: Upload Build Artifacts
@@ -70,4 +69,4 @@ jobs:
             ${{ steps.sign_app.outputs.signedReleaseFile }}
             **/build/libs/*.jar
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.MYGITHUB_TOKEN }}
