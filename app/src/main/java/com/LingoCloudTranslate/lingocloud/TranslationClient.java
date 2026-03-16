@@ -227,7 +227,6 @@ public class TranslationClient {
      */
     private String escapeJson(String input) {
         if (input == null) return null;
-        String quoted = JSONObject.quote(input);
-        return quoted.substring(1, quoted.length() - 1);
+        return input;
     }
 }
