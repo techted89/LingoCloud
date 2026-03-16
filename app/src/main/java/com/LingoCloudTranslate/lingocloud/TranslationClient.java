@@ -33,8 +33,6 @@ public class TranslationClient {
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
     // API Endpoints
-    private static final String GEMINI_ENDPOINT =
-        "https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.5-flash:generateContent";
     private static final String MICROSOFT_ENDPOINT =
         "https://api.cognitive.microsofttranslator.com/translate";
 
@@ -44,6 +42,8 @@ public class TranslationClient {
         .readTimeout(15, TimeUnit.SECONDS)
         .writeTimeout(10, TimeUnit.SECONDS)
         .build();
+
+    private final java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(2);
 
     public interface TranslationCallback {
         void onResult(String translatedText);
@@ -99,7 +99,7 @@ public class TranslationClient {
             targetLang, text
         );
 
-        new Thread(() -> {
+        executor.submit(() -> {
             try {
                 Client genaiClient = Client.builder().apiKey(apiKey).build();
 
@@ -124,7 +124,7 @@ public class TranslationClient {
                 Log.e(TAG, "Gemini API request failed via GenAI SDK", e);
                 callback.onResult(null);
             }
-        }).start();
+        });
     }
 
     /**
@@ -191,12 +191,4 @@ public class TranslationClient {
         });
     }
 
-    /**
-     * Escape special characters for JSON strings
-     */
-    private String escapeJson(String input) {
-        if (input == null) return null;
-        String quoted = JSONObject.quote(input);
-        return quoted.substring(1, quoted.length() - 1);
-    }
 }

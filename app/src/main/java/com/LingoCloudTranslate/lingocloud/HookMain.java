@@ -50,7 +50,14 @@ public class HookMain implements IXposedHookLoadPackage {
     private static final ExecutorService executor = Executors.newFixedThreadPool(3);
 
     // Main thread handler for UI updates
-    private static final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private static Handler mainHandler;
+
+    private static synchronized Handler getMainHandler() {
+        if (mainHandler == null) {
+            mainHandler = new Handler(Looper.getMainLooper());
+        }
+        return mainHandler;
+    }
 
     // Blacklisted packages (system apps that shouldn't be hooked)
     private static final Set<String> BLACKLISTED_PACKAGES = new HashSet<String>() {{
@@ -224,7 +231,7 @@ public class HookMain implements IXposedHookLoadPackage {
                     translationCache.put(textToTranslate, result);
 
                     // Update UI on main thread
-                    mainHandler.post(() -> {
+                    getMainHandler().post(() -> {
                         XposedHelpers.setAdditionalInstanceField(textView, TRANSLATED_FIELD, result);
                         textView.setText(result);
                     });
@@ -245,7 +252,7 @@ public class HookMain implements IXposedHookLoadPackage {
         // Skip very long text (prevent API abuse)
         if (text.length() > MAX_TEXT_LENGTH) return false;
 
-        // Skip if already in cache (handled separately)
+        // Allow cached entry: return true so caller can use cached result
         if (translationCache.get(text) != null) return true;
 
         // Skip numeric-only text

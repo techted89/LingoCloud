@@ -64,7 +64,7 @@ public class SettingsActivity extends AppCompatActivity {
         @Override
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
             getPreferenceManager().setSharedPreferencesName(PREF_FILE);
-            getPreferenceManager().setSharedPreferencesMode(android.content.Context.MODE_PRIVATE);
+            getPreferenceManager().setSharedPreferencesMode(android.content.Context.MODE_WORLD_READABLE);
             setPreferencesFromResource(R.xml.root_preferences, rootKey);
 
             // Initialize encrypted preferences
