@@ -1,7 +1,11 @@
-<<<<<<< HEAD
+
+
+
+
+
 app/build/
-.gradle/
-=======
+
+
 /.gradle
 /local.properties
 /app/local.properties
@@ -10,4 +14,5 @@ app/build/
 /.vscode
 /.DS_Store
 /*.iml
->>>>>>> main
+
+
