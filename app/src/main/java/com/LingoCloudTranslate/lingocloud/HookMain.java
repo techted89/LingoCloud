@@ -29,7 +29,7 @@ public class HookMain implements IXposedHookLoadPackage {
     private static final String PREFS_NAME = "settings";
 
     // Recursion guard tag key - prevents infinite translation loops
-    private static final int TAG_KEY_TRANSLATED = 0xDEAFBEEF;
+    private static final String TRANSLATED_FIELD = "lingocloud_translated";
 
     // Minimum text length to translate (skip single chars/icons)
     private static final int MIN_TEXT_LENGTH = 2;
@@ -194,12 +194,12 @@ public class HookMain implements IXposedHookLoadPackage {
         String cachedResult = translationCache.get(original);
         if (cachedResult != null) {
             param.args[0] = cachedResult;
-            textView.setTag(TAG_KEY_TRANSLATED, cachedResult);
+            XposedHelpers.setAdditionalInstanceField(textView, TRANSLATED_FIELD, cachedResult);
             return;
         }
 
         // Recursion Guard: Don't re-translate our own work
-        Object lastTranslated = textView.getTag(TAG_KEY_TRANSLATED);
+        Object lastTranslated = XposedHelpers.getAdditionalInstanceField(textView, TRANSLATED_FIELD);
         if (lastTranslated != null && lastTranslated.equals(original)) {
             return;
         }
@@ -225,7 +225,7 @@ public class HookMain implements IXposedHookLoadPackage {
 
                     // Update UI on main thread
                     mainHandler.post(() -> {
-                        textView.setTag(TAG_KEY_TRANSLATED, result);
+                        XposedHelpers.setAdditionalInstanceField(textView, TRANSLATED_FIELD, result);
                         textView.setText(result);
                     });
                 }

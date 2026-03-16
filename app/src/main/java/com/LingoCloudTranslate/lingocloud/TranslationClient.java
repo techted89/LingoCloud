@@ -15,6 +15,14 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import com.google.genai.Client;
+import com.google.genai.types.GenerateContentConfig;
+import com.google.genai.types.GenerateContentResponse;
+import com.google.genai.types.Content;
+import com.google.genai.types.Part;
+
+import java.util.Collections;
+
 /**
  * TranslationClient - Cloud API Bridge for LingoCloud
  * Supports: Google Gemini 1.5 Flash & Microsoft Azure Translator
@@ -26,7 +34,7 @@ public class TranslationClient {
 
     // API Endpoints
     private static final String GEMINI_ENDPOINT =
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
+        "https://generativelanguage.googleapis.com/v1alpha/models/gemini-2.5-flash:generateContent";
     private static final String MICROSOFT_ENDPOINT =
         "https://api.cognitive.microsofttranslator.com/translate";
 
@@ -78,84 +86,45 @@ public class TranslationClient {
     }
 
     /**
-     * Google Gemini 1.5 Flash API Call
-     * Optimized for low-latency UI translation
+     * Google GenAI API Call
+     * Uses the official GenAI SDK to replace legacy REST API
      */
     private void callGemini(@NonNull String text, @NonNull String apiKey,
                            @NonNull String targetLang, @NonNull TranslationCallback callback) {
-
-        String url = GEMINI_ENDPOINT + "?key=" + apiKey;
 
         // Construct prompt for UI translation
         String prompt = String.format(
             "Translate the following UI text to %s. " +
             "Return ONLY the translated text without quotes, explanations, or formatting: %s",
-            targetLang, escapeJson(text)
+            targetLang, text
         );
 
-        JSONObject part = new JSONObject();
-        JSONObject content = new JSONObject();
-        JSONObject payload = new JSONObject();
+        new Thread(() -> {
+            try {
+                Client genaiClient = Client.builder().apiKey(apiKey).build();
 
-        try {
-            part.put("text", prompt);
-            content.put("parts", new JSONArray().put(part));
-            payload.put("contents", new JSONArray().put(content));
+                GenerateContentConfig config = GenerateContentConfig.builder()
+                    .temperature(0.1f)
+                    .maxOutputTokens(256)
+                    .build();
 
-            // Configure for faster response
-            JSONObject generationConfig = new JSONObject();
-            generationConfig.put("temperature", 0.1);
-            generationConfig.put("maxOutputTokens", 256);
-            payload.put("generationConfig", generationConfig);
+                GenerateContentResponse response = genaiClient.models.generateContent(
+                    "gemini-2.5-flash",
+                    prompt,
+                    config
+                );
 
-        } catch (JSONException e) {
-            Log.e(TAG, "Failed to build Gemini request", e);
-            callback.onResult(null);
-            return;
-        }
-
-        RequestBody body = RequestBody.create(payload.toString(), JSON);
-        Request request = new Request.Builder()
-            .url(url)
-            .post(body)
-            .header("Content-Type", "application/json")
-            .build();
-
-        client.newCall(request).enqueue(new Callback() {
-            @Override
-            public void onFailure(@NonNull Call call, @NonNull IOException e) {
-                Log.e(TAG, "Gemini API request failed", e);
+                if (response != null && response.text() != null) {
+                    callback.onResult(response.text().trim());
+                } else {
+                    Log.e(TAG, "Gemini API returned empty response");
+                    callback.onResult(null);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Gemini API request failed via GenAI SDK", e);
                 callback.onResult(null);
             }
-
-            @Override
-            public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
-                if (!response.isSuccessful()) {
-                    Log.e(TAG, "Gemini API error: " + response.code());
-                    callback.onResult(null);
-                    return;
-                }
-
-                try {
-                    String responseBody = response.body().string();
-                    JSONObject json = new JSONObject(responseBody);
-
-                    String result = json
-                        .getJSONArray("candidates")
-                        .getJSONObject(0)
-                        .getJSONObject("content")
-                        .getJSONArray("parts")
-                        .getJSONObject(0)
-                        .getString("text");
-
-                    callback.onResult(result.trim());
-
-                } catch (JSONException e) {
-                    Log.e(TAG, "Failed to parse Gemini response", e);
-                    callback.onResult(null);
-                }
-            }
-        });
+        }).start();
     }
 
     /**
