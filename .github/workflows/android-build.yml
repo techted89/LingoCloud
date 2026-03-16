@@ -16,8 +16,6 @@ jobs:
     
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-      ANDROID_HOME: /usr/local/lib/android/sdk
 
     steps:
       - name: Checkout Code
@@ -30,26 +28,14 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          api-level: 35
-          build-tools: 35.0.0
-
-      - name: Ensure SDK paths
-        run: |
-          echo "${ANDROID_HOME}/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "${ANDROID_HOME}/platform-tools" >> $GITHUB_PATH
-          echo "${ANDROID_HOME}/build-tools/35.0.0" >> $GITHUB_PATH
-
       - name: Grant execute to gradlew
         run: chmod +x gradlew
 
-      # 1. Build the APK
+      # 1. Build the unsigned APK
       - name: Build APK (Release)
         run: ./gradlew assembleRelease --no-daemon
 
-      # 2. Sign the APK (Fixes the 29.0.3 error)
+      # 2. Sign the APK
       - name: Sign APK
         uses: r0adkll/sign-android-release@v1
         id: sign_app
@@ -59,8 +45,6 @@ jobs:
           alias: ${{ secrets.ALIAS }}
           keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
           keyPassword: ${{ secrets.KEY_PASSWORD }}
-        env:
-          BUILD_TOOLS_VERSION: "35.0.0"
 
       # 3. Build JAR/Other Artifacts
       - name: Build Other Artifacts
@@ -82,8 +66,6 @@ jobs:
         with:
           tag_name: ${{ github.ref_name || format('v{0}', github.run_number) }}
           name: Release ${{ github.ref_name || github.run_number }}
-          draft: false
-          prerelease: false
           files: |
             ${{ steps.sign_app.outputs.signedReleaseFile }}
             **/build/libs/*.jar
