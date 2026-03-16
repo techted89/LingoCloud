@@ -33,6 +33,7 @@ android {
     }
 
     testOptions {
+        // Required for android.util.Log usage in TranslationClient unit tests.
         unitTests.returnDefaultValues = true
     }
 }

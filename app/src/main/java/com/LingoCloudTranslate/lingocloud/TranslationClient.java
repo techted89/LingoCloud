@@ -19,12 +19,15 @@ import com.google.genai.Client;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 /**
  * TranslationClient - Cloud API Bridge for LingoCloud
- * Supports: Google Gemini 1.5 Flash & Microsoft Azure Translator
+ * Supports: Google Gemini 2.5 Flash & Microsoft Azure Translator
  * Android 15 (SDK 35) Compatible
  */
-public class TranslationClient {
+public class TranslationClient implements AutoCloseable {
     private static final String TAG = "LingoCloud";
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
 
@@ -39,10 +42,23 @@ public class TranslationClient {
         .writeTimeout(10, TimeUnit.SECONDS)
         .build();
 
-    private final java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newFixedThreadPool(2);
+    private final ExecutorService executor = Executors.newFixedThreadPool(2);
 
     public interface TranslationCallback {
         void onResult(String translatedText);
+    }
+
+    private void deliverResult(TranslationCallback callback, String result) {
+        callback.onResult(result);
+    }
+
+    public void shutdown() {
+        executor.shutdown();
+    }
+
+    @Override
+    public void close() {
+        shutdown();
     }
 
     /**
@@ -58,13 +74,13 @@ public class TranslationClient {
                          @NonNull TranslationCallback callback) {
 
         if (text.trim().isEmpty()) {
-            callback.onResult(text);
+            deliverResult(callback, text);
             return;
         }
 
         if (apiKey.trim().isEmpty()) {
             Log.w(TAG, "API key is empty, skipping translation");
-            callback.onResult(null);
+            deliverResult(callback, null);
             return;
         }
 
@@ -77,7 +93,7 @@ public class TranslationClient {
                 break;
             default:
                 Log.e(TAG, "Unknown service: " + service);
-                callback.onResult(null);
+                deliverResult(callback, null);
         }
     }
 
@@ -95,7 +111,7 @@ public class TranslationClient {
             targetLang, text
         );
 
-        executor.submit(() -> {
+        executor.execute(() -> {
             try {
                 Client genaiClient = Client.builder().apiKey(apiKey).build();
 
@@ -111,14 +127,14 @@ public class TranslationClient {
                 );
 
                 if (response != null && response.text() != null) {
-                    callback.onResult(response.text().trim());
+                    deliverResult(callback, response.text().trim());
                 } else {
                     Log.e(TAG, "Gemini API returned empty response");
-                    callback.onResult(null);
+                    deliverResult(callback, null);
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Gemini API request failed via GenAI SDK", e);
-                callback.onResult(null);
+                deliverResult(callback, null);
             }
         });
     }
@@ -139,7 +155,7 @@ public class TranslationClient {
             payload.put(textObj);
         } catch (JSONException e) {
             Log.e(TAG, "Failed to build Microsoft request", e);
-            callback.onResult(null);
+            deliverResult(callback, null);
             return;
         }
 
@@ -156,14 +172,14 @@ public class TranslationClient {
             @Override
             public void onFailure(@NonNull Call call, @NonNull IOException e) {
                 Log.e(TAG, "Microsoft API request failed", e);
-                callback.onResult(null);
+                deliverResult(callback, null);
             }
 
             @Override
             public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                 if (!response.isSuccessful()) {
                     Log.e(TAG, "Microsoft API error: " + response.code());
-                    callback.onResult(null);
+                    deliverResult(callback, null);
                     return;
                 }
 
@@ -187,4 +203,12 @@ public class TranslationClient {
         });
     }
 
+    /**
+     * Escape special characters for JSON strings
+     */
+    private String escapeJson(String input) {
+        if (input == null) return null;
+        String quoted = JSONObject.quote(input);
+        return quoted.substring(1, quoted.length() - 1);
+    }
 }

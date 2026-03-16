@@ -45,6 +45,7 @@ public class HookMain implements IXposedHookLoadPackage {
 
     // Memory cache to avoid repeated API calls (500 entries)
     private static final LruCache<String, String> translationCache = new LruCache<>(500);
+    private static final Object cacheLock = new Object();
 
     // Thread pool for async translation (prevents UI blocking)
     private static final ExecutorService executor = Executors.newFixedThreadPool(3);
@@ -164,7 +165,10 @@ public class HookMain implements IXposedHookLoadPackage {
                         if (!shouldTranslate(original)) return;
 
                         // Check cache first
-                        String cached = translationCache.get(original);
+                        String cached;
+                        synchronized (cacheLock) {
+                            cached = translationCache.get(original);
+                        }
                         if (cached != null) {
                             XposedHelpers.setObjectField(param.thisObject, "mText", cached);
                         }
@@ -198,7 +202,10 @@ public class HookMain implements IXposedHookLoadPackage {
         if (!shouldTranslate(original)) return;
 
         // Check local cache first
-        String cachedResult = translationCache.get(original);
+        String cachedResult;
+        synchronized (cacheLock) {
+            cachedResult = translationCache.get(original);
+        }
         if (cachedResult != null) {
             param.args[0] = cachedResult;
             XposedHelpers.setAdditionalInstanceField(textView, TRANSLATED_FIELD, cachedResult);
@@ -228,11 +235,13 @@ public class HookMain implements IXposedHookLoadPackage {
             client.translate(textToTranslate, service, apiKey, targetLang, result -> {
                 if (result != null && !result.isEmpty()) {
                     // Cache the result
-                    translationCache.put(textToTranslate, result);
+                        synchronized (cacheLock) {
+                            translationCache.put(textToTranslate, result);
+                        }
 
                     // Update UI on main thread
-                    getMainHandler().post(() -> {
-                        XposedHelpers.setAdditionalInstanceField(textView, TRANSLATED_FIELD, result);
+                        getMainHandler().post(() -> {
+                            XposedHelpers.setAdditionalInstanceField(textView, TRANSLATED_FIELD, result);
                         textView.setText(result);
                     });
                 }
@@ -253,7 +262,11 @@ public class HookMain implements IXposedHookLoadPackage {
         if (text.length() > MAX_TEXT_LENGTH) return false;
 
         // Allow cached entry: return true so caller can use cached result
-        if (translationCache.get(text) != null) return true;
+        boolean inCache;
+        synchronized (cacheLock) {
+            inCache = translationCache.get(text) != null;
+        }
+        if (inCache) return true;
 
         // Skip numeric-only text
         if (text.matches("^[0-9,.]+$")) return false;
