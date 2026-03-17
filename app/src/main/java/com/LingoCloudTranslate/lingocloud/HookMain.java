@@ -133,7 +133,12 @@ public class HookMain implements IXposedHookLoadPackage {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                         android.app.Activity activity = (android.app.Activity) param.thisObject;
-                        android.view.View rootView = activity.getWindow().getDecorView().getRootView();
+                        if (activity == null) return;
+                        android.view.Window window = activity.getWindow();
+                        if (window == null) return;
+                        android.view.View decorView = window.getDecorView();
+                        if (decorView == null) return;
+                        android.view.View rootView = decorView.getRootView();
                         scanAndTranslateViewGroup(rootView);
                     }
                 }
@@ -202,7 +207,12 @@ public class HookMain implements IXposedHookLoadPackage {
                         android.widget.TextView tv = weakTextView.get();
                         if (tv == null) return;
                         if (!tv.isAttachedToWindow() || tv.getWindowToken() == null) {
-                            tv.setTag(STATE_TAG_ID, null);
+                            tv.post(() -> {
+                                android.widget.TextView innerTv = weakTextView.get();
+                                if (innerTv != null) {
+                                    innerTv.setTag(STATE_TAG_ID, null);
+                                }
+                            });
                             return;
                         }
 
@@ -399,7 +409,15 @@ public class HookMain implements IXposedHookLoadPackage {
                 android.widget.TextView tv = weakTextView.get();
                 if (tv == null) return;
                 if (!tv.isAttachedToWindow() || tv.getWindowToken() == null) {
-                    tv.setTag(STATE_TAG_ID, null);
+                    tv.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            android.widget.TextView innerTv = weakTextView.get();
+                            if (innerTv != null) {
+                                innerTv.setTag(STATE_TAG_ID, null);
+                            }
+                        }
+                    });
                     return;
                 }
 
