@@ -31,6 +31,9 @@ public class HookMain implements IXposedHookLoadPackage {
     // Recursion guard tag key - prevents infinite translation loops
     private static final String TRANSLATED_FIELD = "lingocloud_translated";
 
+    private static final int STATE_TAG_ID = android.R.id.accessibilityActionContextClick;
+    private static final int ORIGINAL_TEXT_TAG_ID = android.R.id.accessibilityActionScrollDown;
+
     // Minimum text length to translate (skip single chars/icons)
     private static final int MIN_TEXT_LENGTH = 2;
 
@@ -74,9 +77,11 @@ public class HookMain implements IXposedHookLoadPackage {
 
     @Override
     public void handleLoadPackage(LoadPackageParam lpparam) throws Throwable {
-        // Skip blacklisted packages
-        if (BLACKLISTED_PACKAGES.contains(lpparam.packageName)) {
-            return;
+        if (BLACKLISTED_PACKAGES.contains(lpparam.packageName) ||
+            lpparam.packageName.equals("android") ||
+            lpparam.packageName.startsWith("com.android.") ||
+            lpparam.packageName.equals(PREFS_PKG)) {
+            return; // Exclude system framework, system apps, manager apps, and the module itself
         }
 
         // Initialize shared preferences (world-readable for LSPosed)
@@ -110,6 +115,146 @@ public class HookMain implements IXposedHookLoadPackage {
 
         // Hook 2: StaticLayout.Builder - For custom drawn text
         hookStaticLayoutBuilder(lpparam);
+
+        // Hook 3: Active View Scanner (For Pre-Loaded Layouts)
+        hookActivityOnResume(lpparam);
+    }
+
+    /**
+     * The Active View Scanner (For Pre-Loaded Layouts)
+     */
+    private void hookActivityOnResume(LoadPackageParam lpparam) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                "android.app.Activity",
+                lpparam.classLoader,
+                "onResume",
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        android.app.Activity activity = (android.app.Activity) param.thisObject;
+                        if (activity == null) return;
+                        android.view.Window window = activity.getWindow();
+                        if (window == null) return;
+                        android.view.View decorView = window.getDecorView();
+                        if (decorView == null) return;
+                        android.view.View rootView = decorView.getRootView();
+                        scanAndTranslateViewGroup(rootView);
+                    }
+                }
+            );
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": Failed to hook Activity.onResume: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Recursively scans view hierarchy and manually triggers translation logic for pre-loaded text
+     */
+    private void scanAndTranslateViewGroup(android.view.View rootView) {
+        if (rootView == null) return;
+
+        java.util.Deque<android.view.View> queue = new java.util.ArrayDeque<>();
+        queue.add(rootView);
+
+        while (!queue.isEmpty()) {
+            final android.view.View view = queue.poll();
+
+            if (view instanceof android.widget.TextView) {
+                final android.widget.TextView textView = (android.widget.TextView) view;
+                CharSequence originalCharSeq = textView.getText();
+
+                if (originalCharSeq == null || originalCharSeq.length() == 0) {
+                    continue;
+                }
+                final String originalText = originalCharSeq.toString().trim();
+
+                Object currentState = textView.getTag(STATE_TAG_ID);
+
+                if ("IGNORE".equals(currentState) || "TRANSLATING".equals(currentState) || "TRANSLATED".equals(currentState)) {
+                    continue;
+                }
+
+                Object storedOriginal = textView.getTag(ORIGINAL_TEXT_TAG_ID);
+                if (storedOriginal != null && storedOriginal instanceof String) {
+                    String cached = TranslationCache.get((String) storedOriginal);
+                    if (cached != null && cached.equals(originalText)) {
+                        continue;
+                    }
+                }
+
+                if (!shouldTranslate(originalText)) {
+                    continue;
+                }
+
+                String cachedTranslation = TranslationCache.get(originalText);
+                if (cachedTranslation != null) {
+                    textView.setTag(STATE_TAG_ID, "TRANSLATED");
+                    textView.setTag(ORIGINAL_TEXT_TAG_ID, originalText);
+                    textView.setText(cachedTranslation);
+                    continue;
+                }
+
+                textView.setTag(STATE_TAG_ID, "TRANSLATING");
+
+                final java.lang.ref.WeakReference<android.widget.TextView> weakTextView = new java.lang.ref.WeakReference<>(textView);
+
+                GeminiTranslator.translate(originalText, new TranslationCallback() {
+                    @Override
+                    public void onSuccess(final String translatedText) {
+                        TranslationCache.put(originalText, translatedText);
+
+                        android.widget.TextView tv = weakTextView.get();
+                        if (tv == null) return;
+                        if (!tv.isAttachedToWindow() || tv.getWindowToken() == null) {
+                            tv.post(() -> {
+                                android.widget.TextView innerTv = weakTextView.get();
+                                if (innerTv != null) {
+                                    innerTv.setTag(STATE_TAG_ID, null);
+                                }
+                            });
+                            return;
+                        }
+
+                        tv.post(() -> {
+                            android.widget.TextView innerTv = weakTextView.get();
+                            if (innerTv == null) return;
+
+                            if (innerTv.getText().toString().trim().equals(originalText)) {
+                                innerTv.setTag(STATE_TAG_ID, "TRANSLATED");
+                                innerTv.setTag(ORIGINAL_TEXT_TAG_ID, originalText);
+                                innerTv.setText(translatedText);
+                            } else {
+                                innerTv.setTag(STATE_TAG_ID, null);
+                            }
+                        });
+                    }
+
+                    @Override
+                    public void onFailure(String error) {
+                        android.widget.TextView tv = weakTextView.get();
+                        if (tv != null) {
+                            tv.post(() -> {
+                                android.widget.TextView innerTv = weakTextView.get();
+                                if (innerTv != null) {
+                                    innerTv.setTag(STATE_TAG_ID, null);
+                                }
+                            });
+                        }
+                        XposedBridge.log("Translation Scanner Error: " + error);
+                    }
+                });
+
+            } else if (view instanceof android.view.ViewGroup) {
+                android.view.ViewGroup viewGroup = (android.view.ViewGroup) view;
+                for (int i = 0; i < viewGroup.getChildCount(); i++) {
+                    android.view.View child = viewGroup.getChildAt(i);
+                    if (child != null) {
+                        queue.add(child);
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -117,21 +262,41 @@ public class HookMain implements IXposedHookLoadPackage {
      * This is the most comprehensive setText signature
      */
     private void hookTextViewSetText(LoadPackageParam lpparam) {
+        Class<?> textViewClass = XposedHelpers.findClass("android.widget.TextView", lpparam.classLoader);
+
         try {
             XposedHelpers.findAndHookMethod(
-                TextView.class,
+                textViewClass,
                 "setText",
                 CharSequence.class,
-                TextView.BufferType.class,
+                android.widget.TextView.BufferType.class,
                 boolean.class,
                 int.class,
                 new XC_MethodHook() {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                        handleTextUpdate(param);
+                        executeTextTransformation(param);
                     }
                 }
             );
+        } catch (NoSuchMethodError e) {
+            XposedBridge.log(TAG + ": 4-parameter setText not found, falling back to 2-parameter: " + e.getMessage());
+            try {
+                XposedHelpers.findAndHookMethod(
+                    textViewClass,
+                    "setText",
+                    CharSequence.class,
+                    android.widget.TextView.BufferType.class,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                            executeTextTransformation(param);
+                        }
+                    }
+                );
+            } catch (Exception e2) {
+                XposedBridge.log(TAG + ": Failed to hook TextView.setText fallback: " + e2.getMessage());
+            }
         } catch (Exception e) {
             XposedBridge.log(TAG + ": Failed to hook TextView.setText: " + e.getMessage());
         }
@@ -184,75 +349,122 @@ public class HookMain implements IXposedHookLoadPackage {
     /**
      * Main text update handler - processes translation logic
      */
-    private void handleTextUpdate(XC_MethodHook.MethodHookParam param) {
-        // Reload preferences for latest settings
-        prefs.reload();
+    private void executeTextTransformation(XC_MethodHook.MethodHookParam param) {
+        final android.widget.TextView textView = (android.widget.TextView) param.thisObject;
+        final CharSequence originalCharSeq = (CharSequence) param.args[0];
 
-        if (!prefs.getBoolean("module_enabled", true)) return;
+        // 1. Null and Empty checks
+        if (originalCharSeq == null || originalCharSeq.length() == 0) return;
+        final String originalText = originalCharSeq.toString().trim();
 
-        // Get the TextView instance
-        TextView textView = (TextView) param.thisObject;
+        // Skip if text doesn't meet criteria (min/max length, symbols, etc)
+        if (!shouldTranslate(originalText)) return;
 
-        // Validate input
-        if (param.args[0] == null) return;
+        // 2. Recursion and State Guard
+        // We use an Android framework-defined ID that is rarely used to attach our state.
+        Object currentState = textView.getTag(STATE_TAG_ID);
 
-        String original = param.args[0].toString().trim();
-
-        // Skip if text doesn't meet criteria
-        if (!shouldTranslate(original)) return;
-
-        // Check local cache first
-        String cachedResult;
-        synchronized (cacheLock) {
-            cachedResult = translationCache.get(original);
+        if ("IGNORE".equals(currentState) || "TRANSLATING".equals(currentState)) {
+            return; // Already in progress or explicitly ignored
         }
-        if (cachedResult != null) {
-            param.args[0] = cachedResult;
-            XposedHelpers.setAdditionalInstanceField(textView, TRANSLATED_FIELD, cachedResult);
+
+        if ("TRANSLATED".equals(currentState)) {
+            // Text was set by our async callback. Reset state so future organic app changes are caught.
+            textView.setTag(STATE_TAG_ID, null);
             return;
         }
 
-        // Recursion Guard: Don't re-translate our own work
-        Object lastTranslated = XposedHelpers.getAdditionalInstanceField(textView, TRANSLATED_FIELD);
-        if (lastTranslated != null && lastTranslated.equals(original)) {
+        Object storedOriginal = textView.getTag(ORIGINAL_TEXT_TAG_ID);
+        if (storedOriginal != null && storedOriginal instanceof String) {
+            String cached = TranslationCache.get((String) storedOriginal);
+            if (cached != null && cached.equals(originalText)) {
+                return;
+            }
+        }
+
+        // 3. Synchronous Cache Check (Fast Path for RecyclerViews/Scrolling)
+        String cachedTranslation = TranslationCache.get(originalText);
+        if (cachedTranslation != null) {
+            // Inject instantly before the method executes.
+            // Crucial: Preserve the original sequence type if possible (String vs Spannable)
+            if (originalCharSeq instanceof android.text.Spanned || originalCharSeq instanceof android.text.Spannable) {
+                param.args[0] = new android.text.SpannableStringBuilder(cachedTranslation);
+            } else {
+                param.args[0] = cachedTranslation;
+            }
+            textView.setTag(ORIGINAL_TEXT_TAG_ID, originalText);
             return;
         }
 
-        // Get translation settings
-        String service = prefs.getString("service_provider", "Gemini");
-        String apiKeyKey = service.equals("Gemini") ? "gemini_api_key" : "microsoft_api_key";
-        String apiKey = prefs.getString(apiKeyKey, "");
-        String targetLang = prefs.getString("target_lang", "en");
+        // 4. Asynchronous Translation Initiation (Slow Path)
+        textView.setTag(STATE_TAG_ID, "TRANSLATING"); // Lock the view from triggering more API calls
 
-        if (apiKey.isEmpty()) {
-            Log.w(TAG, "API key for " + service + " not configured");
-            return;
-        }
+        final java.lang.ref.WeakReference<android.widget.TextView> weakTextView = new java.lang.ref.WeakReference<>(textView);
 
-        // Async translation - don't block the UI thread
-        final String textToTranslate = original;
-        executor.execute(() -> {
-            client.translate(textToTranslate, service, apiKey, targetLang, result -> {
-                if (result != null && !result.isEmpty()) {
-                    // Cache the result
-                    synchronized (cacheLock) {
-                        translationCache.put(textToTranslate, result);
+        GeminiTranslator.translate(originalText, new TranslationCallback() {
+            @Override
+            public void onSuccess(final String translatedText) {
+                TranslationCache.put(originalText, translatedText);
+
+                android.widget.TextView tv = weakTextView.get();
+                if (tv == null) return;
+                if (!tv.isAttachedToWindow() || tv.getWindowToken() == null) {
+                    tv.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            android.widget.TextView innerTv = weakTextView.get();
+                            if (innerTv != null) {
+                                innerTv.setTag(STATE_TAG_ID, null);
+                            }
+                        }
+                    });
+                    return;
+                }
+
+                // We MUST post back to the UI thread to update the view
+                tv.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        android.widget.TextView innerTv = weakTextView.get();
+                        if (innerTv == null) return;
+
+                        // Double-check if the view's text changed while we were fetching the translation
+                        if (innerTv.getText().toString().trim().equals(originalText)) {
+                            innerTv.setTag(STATE_TAG_ID, "TRANSLATED"); // Set guard before calling setText
+                            innerTv.setTag(ORIGINAL_TEXT_TAG_ID, originalText);
+                            innerTv.setText(translatedText);
+                        } else {
+                            // The app changed the text while we were waiting (e.g., fast scrolling).
+                            // Discard this translation update, but keep it in the cache.
+                            innerTv.setTag(STATE_TAG_ID, null);
+                        }
                     }
+                });
+            }
 
-                    // Update UI on main thread
-                    getMainHandler().post(() -> {
-                        XposedHelpers.setAdditionalInstanceField(textView, TRANSLATED_FIELD, result);
-                        textView.setText(result);
+            @Override
+            public void onFailure(String error) {
+                android.widget.TextView tv = weakTextView.get();
+                if (tv != null) {
+                    tv.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            android.widget.TextView innerTv = weakTextView.get();
+                            if (innerTv != null) {
+                                innerTv.setTag(STATE_TAG_ID, null); // Unlock on failure
+                            }
+                        }
                     });
                 }
-            });
+                XposedBridge.log("Translation Hook Error: " + error);
+            }
         });
     }
 
     /**
      * Determine if text should be translated based on various criteria
      */
-    private boolean shouldTranslate(String text) {
+    private static boolean shouldTranslate(String text) {
         if (text == null || text.isEmpty()) return false;
 
         // Skip short text (likely icons/symbols)
@@ -289,5 +501,73 @@ public class HookMain implements IXposedHookLoadPackage {
             }
         }
         return set;
+    }
+
+    /**
+     * Helper Cache Class to match execution spec literally
+     */
+    private static class TranslationCache {
+        public static String get(String key) {
+            synchronized (cacheLock) {
+                return translationCache.get(key);
+            }
+        }
+
+        public static void put(String key, String value) {
+            synchronized (cacheLock) {
+                translationCache.put(key, value);
+            }
+        }
+    }
+
+    /**
+     * Callback interface to match execution spec literally
+     */
+    private interface TranslationCallback {
+        void onSuccess(String translatedText);
+        void onFailure(String error);
+    }
+
+    /**
+     * Helper API Class to match execution spec literally
+     */
+    private static class GeminiTranslator {
+        private static long lastReloadTime = 0;
+
+        public static void translate(String text, TranslationCallback callback) {
+            long now = System.currentTimeMillis();
+            if (now - lastReloadTime > 1000) {
+                prefs.reload();
+                lastReloadTime = now;
+            }
+            if (!prefs.getBoolean("module_enabled", true)) {
+                callback.onFailure("Module disabled");
+                return;
+            }
+
+            String service = prefs.getString("service_provider", "Gemini");
+            String apiKeyKey = service.equals("Gemini") ? "gemini_api_key" : "microsoft_api_key";
+            String apiKey = prefs.getString(apiKeyKey, "");
+            String targetLang = prefs.getString("target_lang", "en");
+
+            if (apiKey.isEmpty()) {
+                callback.onFailure("API key not configured");
+                return;
+            }
+
+            executor.execute(() -> {
+                try {
+                    client.translate(text, service, apiKey, targetLang, result -> {
+                        if (result != null && !result.isEmpty()) {
+                            callback.onSuccess(result);
+                        } else {
+                            callback.onFailure("Translation result empty or null");
+                        }
+                    });
+                } catch (Exception e) {
+                    callback.onFailure("Exception during translation: " + e.getMessage());
+                }
+            });
+        }
     }
 }
