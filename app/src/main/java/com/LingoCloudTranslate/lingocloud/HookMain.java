@@ -445,8 +445,8 @@ public class HookMain implements IXposedHookLoadPackage {
      * Helper API Class to match execution spec literally
      */
     private static class GeminiTranslator {
-        // Preferences are already reloaded in handleLoadPackage()
         public static void translate(String text, TranslationCallback callback) {
+            prefs.reload();
             if (!prefs.getBoolean("module_enabled", true)) {
                 callback.onFailure("Module disabled");
                 return;
