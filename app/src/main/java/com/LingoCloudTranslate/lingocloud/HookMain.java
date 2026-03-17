@@ -31,6 +31,9 @@ public class HookMain implements IXposedHookLoadPackage {
     // Recursion guard tag key - prevents infinite translation loops
     private static final String TRANSLATED_FIELD = "lingocloud_translated";
 
+    private static final int STATE_TAG_ID = android.R.id.accessibilityActionContextClick;
+    private static final int ORIGINAL_TEXT_TAG_ID = android.R.id.accessibilityActionScrollDown;
+
     // Minimum text length to translate (skip single chars/icons)
     private static final int MIN_TEXT_LENGTH = 2;
 
@@ -146,7 +149,7 @@ public class HookMain implements IXposedHookLoadPackage {
     private void scanAndTranslateViewGroup(android.view.View rootView) {
         if (rootView == null) return;
 
-        java.util.Queue<android.view.View> queue = new java.util.LinkedList<>();
+        java.util.Deque<android.view.View> queue = new java.util.ArrayDeque<>();
         queue.add(rootView);
 
         while (!queue.isEmpty()) {
@@ -160,20 +163,29 @@ public class HookMain implements IXposedHookLoadPackage {
                     continue;
                 }
                 final String originalText = originalCharSeq.toString().trim();
-                if (!shouldTranslate(originalText)) {
-                    continue;
-                }
 
-                final int STATE_TAG_ID = android.R.id.accessibilityActionContextClick;
                 Object currentState = textView.getTag(STATE_TAG_ID);
 
                 if ("IGNORE".equals(currentState) || "TRANSLATING".equals(currentState) || "TRANSLATED".equals(currentState)) {
                     continue;
                 }
 
+                Object storedOriginal = textView.getTag(ORIGINAL_TEXT_TAG_ID);
+                if (storedOriginal != null && storedOriginal instanceof String) {
+                    String cached = TranslationCache.get((String) storedOriginal);
+                    if (cached != null && cached.equals(originalText)) {
+                        continue;
+                    }
+                }
+
+                if (!shouldTranslate(originalText)) {
+                    continue;
+                }
+
                 String cachedTranslation = TranslationCache.get(originalText);
                 if (cachedTranslation != null) {
                     textView.setTag(STATE_TAG_ID, "TRANSLATED");
+                    textView.setTag(ORIGINAL_TEXT_TAG_ID, originalText);
                     textView.setText(cachedTranslation);
                     continue;
                 }
@@ -189,7 +201,7 @@ public class HookMain implements IXposedHookLoadPackage {
 
                         android.widget.TextView tv = weakTextView.get();
                         if (tv == null) return;
-                        if (!tv.isAttachedToWindow()) {
+                        if (!tv.isAttachedToWindow() || tv.getWindowToken() == null) {
                             tv.setTag(STATE_TAG_ID, null);
                             return;
                         }
@@ -200,6 +212,7 @@ public class HookMain implements IXposedHookLoadPackage {
 
                             if (innerTv.getText().toString().trim().equals(originalText)) {
                                 innerTv.setTag(STATE_TAG_ID, "TRANSLATED");
+                                innerTv.setTag(ORIGINAL_TEXT_TAG_ID, originalText);
                                 innerTv.setText(translatedText);
                             } else {
                                 innerTv.setTag(STATE_TAG_ID, null);
@@ -339,7 +352,6 @@ public class HookMain implements IXposedHookLoadPackage {
 
         // 2. Recursion and State Guard
         // We use an Android framework-defined ID that is rarely used to attach our state.
-        final int STATE_TAG_ID = android.R.id.accessibilityActionContextClick;
         Object currentState = textView.getTag(STATE_TAG_ID);
 
         if ("IGNORE".equals(currentState) || "TRANSLATING".equals(currentState)) {
@@ -352,6 +364,14 @@ public class HookMain implements IXposedHookLoadPackage {
             return;
         }
 
+        Object storedOriginal = textView.getTag(ORIGINAL_TEXT_TAG_ID);
+        if (storedOriginal != null && storedOriginal instanceof String) {
+            String cached = TranslationCache.get((String) storedOriginal);
+            if (cached != null && cached.equals(originalText)) {
+                return;
+            }
+        }
+
         // 3. Synchronous Cache Check (Fast Path for RecyclerViews/Scrolling)
         String cachedTranslation = TranslationCache.get(originalText);
         if (cachedTranslation != null) {
@@ -362,6 +382,7 @@ public class HookMain implements IXposedHookLoadPackage {
             } else {
                 param.args[0] = cachedTranslation;
             }
+            textView.setTag(ORIGINAL_TEXT_TAG_ID, originalText);
             return;
         }
 
@@ -377,7 +398,7 @@ public class HookMain implements IXposedHookLoadPackage {
 
                 android.widget.TextView tv = weakTextView.get();
                 if (tv == null) return;
-                if (!tv.isAttachedToWindow()) {
+                if (!tv.isAttachedToWindow() || tv.getWindowToken() == null) {
                     tv.setTag(STATE_TAG_ID, null);
                     return;
                 }
@@ -392,6 +413,7 @@ public class HookMain implements IXposedHookLoadPackage {
                         // Double-check if the view's text changed while we were fetching the translation
                         if (innerTv.getText().toString().trim().equals(originalText)) {
                             innerTv.setTag(STATE_TAG_ID, "TRANSLATED"); // Set guard before calling setText
+                            innerTv.setTag(ORIGINAL_TEXT_TAG_ID, originalText);
                             innerTv.setText(translatedText);
                         } else {
                             // The app changed the text while we were waiting (e.g., fast scrolling).

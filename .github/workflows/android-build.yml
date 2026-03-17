@@ -33,7 +33,8 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-35 build-tools;35.0.0'
+          api-level: 35
+          build-tools: 35.0.0
 
       - name: Ensure SDK paths
         run: |
@@ -50,7 +51,7 @@ jobs:
 
       # 2. Sign the APK (Fixes the 29.0.3 error)
       - name: Sign APK
-        uses: filippoLeporati93/android-release-signer@v1
+        uses: r0adkll/sign-android-release@v1
         id: sign_app
         with:
           releaseDirectory: app/build/outputs/apk/release
