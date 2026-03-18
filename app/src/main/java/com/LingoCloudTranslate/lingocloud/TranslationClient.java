@@ -45,7 +45,7 @@ public class TranslationClient implements AutoCloseable {
     private final ExecutorService executor = Executors.newFixedThreadPool(2);
 
     private volatile Client genaiClient;
-    private String cachedApiKey;
+    private volatile String cachedApiKey;
 
     public interface TranslationCallback {
         void onResult(String translatedText);
@@ -62,6 +62,13 @@ public class TranslationClient implements AutoCloseable {
     @Override
     public void close() {
         shutdown();
+    }
+
+    public void resetClient() {
+        synchronized (this) {
+            genaiClient = null;
+            cachedApiKey = null;
+        }
     }
 
     /**
@@ -116,13 +123,19 @@ public class TranslationClient implements AutoCloseable {
 
         executor.execute(() -> {
             try {
-                if (genaiClient == null || !apiKey.equals(cachedApiKey)) {
-                    synchronized (this) {
-                        if (genaiClient == null || !apiKey.equals(cachedApiKey)) {
-                            genaiClient = Client.builder().apiKey(apiKey).build();
-                            cachedApiKey = apiKey;
-                        }
+                Client localClient;
+                synchronized (this) {
+                    if (genaiClient == null || !apiKey.equals(cachedApiKey)) {
+                        genaiClient = Client.builder().apiKey(apiKey).build();
+                        cachedApiKey = apiKey;
                     }
+                    localClient = genaiClient;
+                }
+
+                if (localClient == null) {
+                    Log.e(TAG, "Failed to initialize Gemini client");
+                    deliverResult(callback, null);
+                    return;
                 }
 
                 GenerateContentConfig config = GenerateContentConfig.builder()
@@ -130,7 +143,7 @@ public class TranslationClient implements AutoCloseable {
                     .maxOutputTokens(256)
                     .build();
 
-                GenerateContentResponse response = genaiClient.models.generateContent(
+                GenerateContentResponse response = localClient.models.generateContent(
                     "gemini-2.5-flash",
                     prompt,
                     config
@@ -144,7 +157,11 @@ public class TranslationClient implements AutoCloseable {
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Gemini API request failed via GenAI SDK", e);
-                deliverResult(callback, null);
+                if (e.getMessage() != null && e.getMessage().contains("429")) {
+                    deliverResult(callback, "ERROR_LIMIT_EXCEEDED");
+                } else {
+                    deliverResult(callback, null);
+                }
             }
         });
     }
@@ -189,7 +206,11 @@ public class TranslationClient implements AutoCloseable {
             public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                 if (!response.isSuccessful()) {
                     Log.e(TAG, "Microsoft API error: " + response.code());
-                    deliverResult(callback, null);
+                    if (response.code() == 429) {
+                        deliverResult(callback, "ERROR_LIMIT_EXCEEDED");
+                    } else {
+                        deliverResult(callback, null);
+                    }
                     return;
                 }
 

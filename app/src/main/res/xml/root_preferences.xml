@@ -60,6 +60,20 @@
             android:dialogTitle="Microsoft API Key"
             app:iconSpaceReserved="false" />
 
+        <EditTextPreference
+            android:key="gemini_api_key_backup"
+            android:title="Backup Google Gemini API Key"
+            android:summary="Enter a backup key if the primary exceeds limits"
+            android:dialogTitle="Backup Gemini API Key"
+            app:iconSpaceReserved="false" />
+
+        <EditTextPreference
+            android:key="microsoft_api_key_backup"
+            android:title="Backup Microsoft Translator API Key"
+            android:summary="Enter a backup key if the primary exceeds limits"
+            android:dialogTitle="Backup Microsoft API Key"
+            app:iconSpaceReserved="false" />
+
     </PreferenceCategory>
 
     <!-- App Configuration -->
@@ -67,12 +81,11 @@
         android:title="App Configuration"
         app:iconSpaceReserved="false">
 
-        <EditTextPreference
+        <MultiSelectListPreference
             android:key="app_whitelist"
             android:title="App Whitelist"
-            android:summary="Leave empty to translate all apps"
-            android:dialogTitle="App Whitelist"
-            android:dialogMessage="Enter package names separated by commas (e.g., com.instagram.android, com.twitter.android)"
+            android:summary="Select apps to translate"
+            android:dialogTitle="Select Apps"
             app:iconSpaceReserved="false" />
 
     </PreferenceCategory>
