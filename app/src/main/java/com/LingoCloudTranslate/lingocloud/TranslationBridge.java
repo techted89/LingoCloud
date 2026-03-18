@@ -5,6 +5,7 @@ import android.webkit.WebView;
 import android.os.Handler;
 import android.os.Looper;
 import de.robv.android.xposed.XposedBridge;
+import org.json.JSONObject;
 
 public class TranslationBridge {
     private WebView webView;
@@ -45,13 +46,12 @@ public class TranslationBridge {
         mainHandler.post(new Runnable() {
             @Override
             public void run() {
-                // Escape single quotes and backslashes in the translated text to prevent JS injection errors
-                String safeText = translatedText.replace("\\", "\\\\").replace("'", "\\'");
+                String safeText = JSONObject.quote(translatedText);
 
                 // Construct JS to update the specific node by its unique ID
                 String jsUpdate = "javascript:(function() { " +
                         "  var el = document.getElementById('" + domNodeId + "'); " +
-                        "  if (el) { el.innerText = '" + safeText + "'; } " +
+                        "  if (el) { el.innerText = " + safeText + "; } " +
                         "})();";
 
                 webView.evaluateJavascript(jsUpdate, null);

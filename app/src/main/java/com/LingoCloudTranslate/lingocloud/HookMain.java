@@ -96,8 +96,10 @@ public class HookMain implements IXposedHookLoadPackage {
         // 2. Fetch configurations
         String service = prefs.getString("service_provider", "Gemini");
         String apiKeyKey = service.equals("Gemini") ? "gemini_api_key" : "microsoft_api_key";
+        String backupKeyKey = service.equals("Gemini") ? "gemini_api_key_backup" : "microsoft_api_key_backup";
         String apiKey = prefs.getString(apiKeyKey, "");
-        String whitelistStr = prefs.getString("app_whitelist", "");
+        String backupApiKey = prefs.getString(backupKeyKey, "");
+        Set<String> enabledApps = prefs.getStringSet("app_whitelist", new HashSet<>());
         String targetLanguage = prefs.getString("target_lang", "en");
 
         // 3. Dynamic Package Filtering
@@ -112,15 +114,12 @@ public class HookMain implements IXposedHookLoadPackage {
             return;
         }
 
-        if (!whitelistStr.isEmpty()) {
-            Set<String> enabledApps = parseWhitelist(whitelistStr);
-            if (!enabledApps.contains(lpparam.packageName)) {
-                return; // Target app is not in the user's whitelist. Bypass.
-            }
+        if (!enabledApps.contains(lpparam.packageName)) {
+            return; // Target app is not in the user's whitelist. Bypass.
         }
 
         // 4. Pass configuration to the Translator
-        GeminiTranslator.setConfiguration(service, apiKey, targetLanguage);
+        GeminiTranslator.setConfiguration(service, apiKey, backupApiKey, targetLanguage);
 
         XposedBridge.log(TAG + ": Hooking package " + lpparam.packageName);
 
@@ -235,7 +234,7 @@ public class HookMain implements IXposedHookLoadPackage {
                                 });
                             }
                             @Override
-                            public void onFailure(String error) { }
+                            public void onFailure(String error) { XposedBridge.log(TAG + ": MenuItem translation failed: " + error); }
                         });
                     }
                 }
@@ -347,6 +346,7 @@ public class HookMain implements IXposedHookLoadPackage {
                                     @Override
                                     public void onSuccess(String translatedText) {
                                         TranslationCache.put(originalText, translatedText);
+                                        TranslationCache.unmarkFetching(originalText);
                                     }
                                     @Override
                                     public void onFailure(String error) {
@@ -781,6 +781,15 @@ public class HookMain implements IXposedHookLoadPackage {
                 fetchingSet.remove(key);
             }
         }
+
+        public static void clear() {
+            synchronized (cacheLock) {
+                translationCache.evictAll();
+            }
+            synchronized (fetchingSet) {
+                fetchingSet.clear();
+            }
+        }
     }
 
     /**
@@ -796,12 +805,16 @@ public class HookMain implements IXposedHookLoadPackage {
      */
     static class GeminiTranslator {
         private static String apiKey = "";
+        private static String backupApiKey = "";
         private static String targetLanguage = "en";
         private static String service = "Gemini";
+        private static boolean useBackup = false;
+        private static long backupFallbackTime = 0;
 
-        public static void setConfiguration(String svc, String key, String lang) {
+        public static void setConfiguration(String svc, String key, String backupKey, String lang) {
             service = svc;
             apiKey = key;
+            backupApiKey = backupKey;
             targetLanguage = lang;
         }
 
@@ -811,13 +824,34 @@ public class HookMain implements IXposedHookLoadPackage {
                 return;
             }
 
+            // Reset backup flag if 1 hour has passed since fallback
+            if (useBackup && (System.currentTimeMillis() - backupFallbackTime > 3600000)) {
+                useBackup = false;
+                client.resetClient();
+            }
+
+            String currentKey = useBackup && !backupApiKey.isEmpty() ? backupApiKey : apiKey;
+
             executor.execute(() -> {
                 try {
-                    client.translate(text, service, apiKey, targetLanguage, result -> {
-                        if (result != null && !result.isEmpty()) {
-                            callback.onSuccess(result);
-                        } else {
-                            callback.onFailure("Translation result empty or null");
+                    client.translate(text, service, currentKey, targetLanguage, new TranslationClient.TranslationCallback() {
+                        @Override
+                        public void onResult(String result) {
+                            if (result != null && result.startsWith("ERROR_LIMIT_EXCEEDED")) {
+                                if (!useBackup && !backupApiKey.isEmpty()) {
+                                    useBackup = true;
+                                    backupFallbackTime = System.currentTimeMillis();
+                                    client.resetClient();
+                                    // Retry once with backup key
+                                    translate(text, callback);
+                                } else {
+                                    callback.onFailure("API limits exceeded for both keys");
+                                }
+                            } else if (result != null && !result.isEmpty()) {
+                                callback.onSuccess(result);
+                            } else {
+                                callback.onFailure("Translation result empty or null");
+                            }
                         }
                     });
                 } catch (Exception e) {

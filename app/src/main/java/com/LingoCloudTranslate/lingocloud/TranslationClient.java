@@ -64,6 +64,13 @@ public class TranslationClient implements AutoCloseable {
         shutdown();
     }
 
+    public void resetClient() {
+        synchronized (this) {
+            genaiClient = null;
+            cachedApiKey = null;
+        }
+    }
+
     /**
      * Main translation entry point
      * @param text Text to translate
@@ -144,7 +151,11 @@ public class TranslationClient implements AutoCloseable {
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Gemini API request failed via GenAI SDK", e);
-                deliverResult(callback, null);
+                if (e.getMessage() != null && e.getMessage().contains("429")) {
+                    deliverResult(callback, "ERROR_LIMIT_EXCEEDED");
+                } else {
+                    deliverResult(callback, null);
+                }
             }
         });
     }
@@ -189,7 +200,11 @@ public class TranslationClient implements AutoCloseable {
             public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
                 if (!response.isSuccessful()) {
                     Log.e(TAG, "Microsoft API error: " + response.code());
-                    deliverResult(callback, null);
+                    if (response.code() == 429) {
+                        deliverResult(callback, "ERROR_LIMIT_EXCEEDED");
+                    } else {
+                        deliverResult(callback, null);
+                    }
                     return;
                 }
 

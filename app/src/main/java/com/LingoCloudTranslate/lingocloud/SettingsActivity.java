@@ -9,11 +9,17 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.preference.DropDownPreference;
 import androidx.preference.EditTextPreference;
+import androidx.preference.MultiSelectListPreference;
 import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.SwitchPreferenceCompat;
 import androidx.security.crypto.EncryptedSharedPreferences;
 import androidx.security.crypto.MasterKey;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.io.IOException;
 import java.security.GeneralSecurityException;
 
@@ -149,6 +155,8 @@ public class SettingsActivity extends AppCompatActivity {
         private void setupApiKeyInput() {
             setupSpecificApiKeyInput("gemini_api_key");
             setupSpecificApiKeyInput("microsoft_api_key");
+            setupSpecificApiKeyInput("gemini_api_key_backup");
+            setupSpecificApiKeyInput("microsoft_api_key_backup");
         }
 
         private void setupSpecificApiKeyInput(String prefKey) {
@@ -201,20 +209,31 @@ public class SettingsActivity extends AppCompatActivity {
         }
 
         private void setupAppWhitelist() {
-            EditTextPreference whitelistPref = findPreference("app_whitelist");
+            MultiSelectListPreference whitelistPref = findPreference("app_whitelist");
             if (whitelistPref != null) {
-                whitelistPref.setSummaryProvider(preference -> {
-                    String value = ((EditTextPreference) preference).getText();
-                    if (value == null || value.isEmpty()) {
-                        return "All apps (leave empty to translate all)";
-                    }
-                    return "Apps: " + value;
-                });
+                PackageManager pm = requireContext().getPackageManager();
+                List<ApplicationInfo> apps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
 
-                whitelistPref.setDialogMessage(
-                    "Enter package names separated by commas\n" +
-                    "Example: com.instagram.android, com.twitter.android"
-                );
+                List<String> entryValues = new ArrayList<>();
+                List<String> entries = new ArrayList<>();
+
+                for (ApplicationInfo app : apps) {
+                    if ((app.flags & ApplicationInfo.FLAG_SYSTEM) == 0 || (app.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0) {
+                        entryValues.add(app.packageName);
+                        entries.add(app.loadLabel(pm).toString());
+                    }
+                }
+
+                whitelistPref.setEntries(entries.toArray(new CharSequence[0]));
+                whitelistPref.setEntryValues(entryValues.toArray(new CharSequence[0]));
+
+                whitelistPref.setSummaryProvider(preference -> {
+                    java.util.Set<String> values = ((MultiSelectListPreference) preference).getValues();
+                    if (values == null || values.isEmpty()) {
+                        return "No apps selected (LingoCloud is disabled for all apps by default if whitelist is empty)";
+                    }
+                    return values.size() + " apps selected";
+                });
             }
         }
 
