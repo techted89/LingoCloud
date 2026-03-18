@@ -96,7 +96,7 @@ public class SettingsActivity extends AppCompatActivity {
             // Make preferences readable by Xposed module
             try {
                 java.io.File prefsDir = new java.io.File(requireContext().getApplicationInfo().dataDir, "shared_prefs");
-                java.io.File prefsFile = new java.io.File(prefsDir, requireContext().getPackageName() + "_preferences.xml");
+                java.io.File prefsFile = new java.io.File(prefsDir, PREF_FILE + ".xml");
                 if (prefsDir.exists()) {
                     prefsDir.setExecutable(true, false);
                     prefsDir.setReadable(true, false);

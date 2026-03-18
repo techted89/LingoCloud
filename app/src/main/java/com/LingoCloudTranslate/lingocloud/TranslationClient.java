@@ -45,7 +45,7 @@ public class TranslationClient implements AutoCloseable {
     private final ExecutorService executor = Executors.newFixedThreadPool(2);
 
     private volatile Client genaiClient;
-    private String cachedApiKey;
+    private volatile String cachedApiKey;
 
     public interface TranslationCallback {
         void onResult(String translatedText);
@@ -123,13 +123,19 @@ public class TranslationClient implements AutoCloseable {
 
         executor.execute(() -> {
             try {
-                if (genaiClient == null || !apiKey.equals(cachedApiKey)) {
-                    synchronized (this) {
-                        if (genaiClient == null || !apiKey.equals(cachedApiKey)) {
-                            genaiClient = Client.builder().apiKey(apiKey).build();
-                            cachedApiKey = apiKey;
-                        }
+                Client localClient;
+                synchronized (this) {
+                    if (genaiClient == null || !apiKey.equals(cachedApiKey)) {
+                        genaiClient = Client.builder().apiKey(apiKey).build();
+                        cachedApiKey = apiKey;
                     }
+                    localClient = genaiClient;
+                }
+
+                if (localClient == null) {
+                    Log.e(TAG, "Failed to initialize Gemini client");
+                    deliverResult(callback, null);
+                    return;
                 }
 
                 GenerateContentConfig config = GenerateContentConfig.builder()
@@ -137,7 +143,7 @@ public class TranslationClient implements AutoCloseable {
                     .maxOutputTokens(256)
                     .build();
 
-                GenerateContentResponse response = genaiClient.models.generateContent(
+                GenerateContentResponse response = localClient.models.generateContent(
                     "gemini-2.5-flash",
                     prompt,
                     config

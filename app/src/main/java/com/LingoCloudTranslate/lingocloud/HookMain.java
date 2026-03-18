@@ -87,7 +87,7 @@ public class HookMain implements IXposedHookLoadPackage {
         // 1. Initialize and reload XSharedPreferences
         if (prefs == null) {
             // Initialize with your EXACT module package name
-            prefs = new XSharedPreferences(PREFS_PKG, PREFS_PKG + "_preferences");
+            prefs = new XSharedPreferences(PREFS_PKG, PREFS_NAME);
             prefs.makeWorldReadable();
         } else {
             prefs.reload();
@@ -265,9 +265,10 @@ public class HookMain implements IXposedHookLoadPackage {
                             "  var node; " +
                             "  while(node = walker.nextNode()) { nodesToProcess.push(node); } " +
                             "  var idCounter = 0; " +
+                            "  var textToIds = {}; " +
                             "  nodesToProcess.forEach(function(n) { " +
                             "    var text = n.nodeValue.trim(); " +
-                            "    if (text.length > 0 && n.parentNode.nodeName !== 'SCRIPT' && n.parentNode.nodeName !== 'STYLE') { " +
+                            "    if (text.length >= 2 && text.length <= 500 && !text.match(/^[0-9,.]+$/) && !text.match(/^[\\u2190-\\u2199\\u25A0-\\u25FF]+$/) && n.parentNode.nodeName !== 'SCRIPT' && n.parentNode.nodeName !== 'STYLE') { " +
                             "       idCounter++; " +
                             "       var uniqueId = 'lingo-node-' + idCounter; " +
                             "       /* Wrap the text node in a span so we have an ID to target later */ " +
@@ -275,12 +276,15 @@ public class HookMain implements IXposedHookLoadPackage {
                             "       span.id = uniqueId; " +
                             "       span.innerText = text; " +
                             "       n.parentNode.replaceChild(span, n); " +
-                            "       /* Call out to the Java interface */ " +
-                            "       if (window.LingoBridge) { " +
-                            "           window.LingoBridge.requestTranslation(text, uniqueId); " +
-                            "       } " +
+                            "       if (!textToIds[text]) { textToIds[text] = []; } " +
+                            "       textToIds[text].push(uniqueId); " +
                             "    } " +
                             "  }); " +
+                            "  if (window.LingoBridge) { " +
+                            "      for (var text in textToIds) { " +
+                            "          window.LingoBridge.requestTranslation(text, JSON.stringify(textToIds[text])); " +
+                            "      } " +
+                            "  } " +
                             "})();";
 
                         webView.evaluateJavascript(jsPayload, null);
@@ -337,9 +341,7 @@ public class HookMain implements IXposedHookLoadPackage {
                             param.args[0] = cachedTranslation; // Instant swap on canvas
                         } else {
                             // 1. Check if we are already fetching this exact string to prevent spam
-                            if (!TranslationCache.isFetching(originalText)) {
-                                TranslationCache.markFetching(originalText);
-
+                            if (TranslationCache.tryMarkFetching(originalText)) {
                                 // 2. Queue in background. When it finishes, the NEXT frame drawn
                                 // will hit the cache and render the translated text.
                                 GeminiTranslator.translate(originalText, new TranslationCallback() {
@@ -767,6 +769,16 @@ public class HookMain implements IXposedHookLoadPackage {
         public static boolean isFetching(String key) {
             synchronized (fetchingSet) {
                 return fetchingSet.contains(key);
+            }
+        }
+
+        public static boolean tryMarkFetching(String key) {
+            synchronized (fetchingSet) {
+                if (fetchingSet.contains(key)) {
+                    return false;
+                }
+                fetchingSet.add(key);
+                return true;
             }
         }
 
