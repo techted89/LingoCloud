@@ -84,14 +84,27 @@ public class HookMain implements IXposedHookLoadPackage {
             return; // Exclude system framework, system apps, manager apps, and the module itself
         }
 
-        // Initialize shared preferences (world-readable for LSPosed)
+        // 1. Initialize and reload XSharedPreferences
         if (prefs == null) {
-            prefs = new XSharedPreferences(PREFS_PKG, PREFS_NAME);
+            // Initialize with your EXACT module package name
+            prefs = new XSharedPreferences(PREFS_PKG, PREFS_PKG + "_preferences");
             prefs.makeWorldReadable();
+        } else {
+            prefs.reload();
         }
 
-        // Reload preferences to get latest settings
-        prefs.reload();
+        // 2. Fetch configurations
+        String service = prefs.getString("service_provider", "Gemini");
+        String apiKeyKey = service.equals("Gemini") ? "gemini_api_key" : "microsoft_api_key";
+        String apiKey = prefs.getString(apiKeyKey, "");
+        String whitelistStr = prefs.getString("app_whitelist", "");
+        String targetLanguage = prefs.getString("target_lang", "en");
+
+        // 3. Dynamic Package Filtering
+        if (apiKey.isEmpty()) {
+            XposedBridge.log("LingoCloud: No API key configured. Bypassing.");
+            return;
+        }
 
         // Check if module is enabled
         if (!prefs.getBoolean("module_enabled", true)) {
@@ -99,14 +112,15 @@ public class HookMain implements IXposedHookLoadPackage {
             return;
         }
 
-        // Check if this package is in the whitelist (if whitelist is enabled)
-        String whitelistStr = prefs.getString("app_whitelist", "");
         if (!whitelistStr.isEmpty()) {
-            Set<String> whitelist = parseWhitelist(whitelistStr);
-            if (!whitelist.contains(lpparam.packageName)) {
-                return; // Not in whitelist, skip
+            Set<String> enabledApps = parseWhitelist(whitelistStr);
+            if (!enabledApps.contains(lpparam.packageName)) {
+                return; // Target app is not in the user's whitelist. Bypass.
             }
         }
+
+        // 4. Pass configuration to the Translator
+        GeminiTranslator.setConfiguration(service, apiKey, targetLanguage);
 
         XposedBridge.log(TAG + ": Hooking package " + lpparam.packageName);
 
@@ -118,6 +132,235 @@ public class HookMain implements IXposedHookLoadPackage {
 
         // Hook 3: Active View Scanner (For Pre-Loaded Layouts)
         hookActivityOnResume(lpparam);
+
+        // Hook 4: Intercepting Transient UI: Toast Popups
+        hookToastMakeText(lpparam);
+
+        // Hook 5: Intercepting Action Bars and Context Menus: MenuItem
+        hookMenuItemSetTitle(lpparam);
+
+        // Hook 6: Intercepting Hybrid Apps: WebView (DOM Injection)
+        hookWebViewClientOnPageFinished(lpparam);
+        hookWebViewConstructor(lpparam);
+
+        // Hook 7: Intercepting Custom Game Engines / Heavy UI: Canvas.drawText
+        hookCanvasDrawText(lpparam);
+    }
+
+    private void hookToastMakeText(LoadPackageParam lpparam) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                "android.widget.Toast",
+                lpparam.classLoader,
+                "makeText",
+                android.content.Context.class,
+                CharSequence.class,
+                int.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        CharSequence originalText = (CharSequence) param.args[1];
+                        if (originalText == null || originalText.length() == 0) return;
+
+                        String textStr = originalText.toString();
+                        String cachedTranslation = TranslationCache.get(textStr);
+
+                        if (cachedTranslation != null) {
+                            param.args[1] = cachedTranslation; // Instant synchronous swap
+                        } else {
+                            // For Toasts, we cannot easily wait for an async network call since the Toast
+                            // is created and shown synchronously by the app.
+                            // We trigger a background translation so the cache is hot for the next time,
+                            // but we must let the original text through this first time.
+                            GeminiTranslator.translate(textStr, new TranslationCallback() {
+                                @Override
+                                public void onSuccess(String translatedText) {
+                                    TranslationCache.put(textStr, translatedText);
+                                }
+                                @Override
+                                public void onFailure(String error) { }
+                            });
+                        }
+                    }
+                }
+            );
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": Failed to hook Toast.makeText: " + e.getMessage());
+        }
+    }
+
+    private void hookMenuItemSetTitle(LoadPackageParam lpparam) {
+        try {
+            Class<?> menuItemClass;
+            try {
+                menuItemClass = XposedHelpers.findClass("com.android.internal.view.menu.MenuItemImpl", lpparam.classLoader);
+            } catch (XposedHelpers.ClassNotFoundError e) {
+                XposedBridge.log("MenuItemImpl not found. Falling back or skipping.");
+                return;
+            }
+
+            XposedHelpers.findAndHookMethod(
+                menuItemClass,
+                "setTitle",
+                CharSequence.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        final android.view.MenuItem menuItem = (android.view.MenuItem) param.thisObject;
+                        final CharSequence originalCharSeq = (CharSequence) param.args[0];
+
+                        if (originalCharSeq == null || originalCharSeq.length() == 0) return;
+                        final String originalText = originalCharSeq.toString();
+
+                        String cachedTranslation = TranslationCache.get(originalText);
+                        if (cachedTranslation != null) {
+                            param.args[0] = cachedTranslation;
+                            return;
+                        }
+
+                        // Async fetch for menu items
+                        GeminiTranslator.translate(originalText, new TranslationCallback() {
+                            @Override
+                            public void onSuccess(final String translatedText) {
+                                TranslationCache.put(originalText, translatedText);
+                                // MenuItems don't have a direct .post() method like Views,
+                                // so we execute on the main thread via an Android Handler
+                                new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        // Recursion is naturally prevented because we hit the cache
+                                        // on the second pass when this setTitle runs.
+                                        menuItem.setTitle(translatedText);
+                                    }
+                                });
+                            }
+                            @Override
+                            public void onFailure(String error) { }
+                        });
+                    }
+                }
+            );
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": Failed to hook MenuItemImpl.setTitle: " + e.getMessage());
+        }
+    }
+
+    private void hookWebViewClientOnPageFinished(LoadPackageParam lpparam) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                "android.webkit.WebViewClient",
+                lpparam.classLoader,
+                "onPageFinished",
+                "android.webkit.WebView",
+                String.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        android.webkit.WebView webView = (android.webkit.WebView) param.args[0];
+
+                        String jsPayload = "javascript:(function() { " +
+                            "  if (window.lingoInjected) return; " + // Prevent multiple injections
+                            "  window.lingoInjected = true; " +
+                            "  var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false); " +
+                            "  var nodesToProcess = []; " +
+                            "  var node; " +
+                            "  while(node = walker.nextNode()) { nodesToProcess.push(node); } " +
+                            "  var idCounter = 0; " +
+                            "  nodesToProcess.forEach(function(n) { " +
+                            "    var text = n.nodeValue.trim(); " +
+                            "    if (text.length > 0 && n.parentNode.nodeName !== 'SCRIPT' && n.parentNode.nodeName !== 'STYLE') { " +
+                            "       idCounter++; " +
+                            "       var uniqueId = 'lingo-node-' + idCounter; " +
+                            "       /* Wrap the text node in a span so we have an ID to target later */ " +
+                            "       var span = document.createElement('span'); " +
+                            "       span.id = uniqueId; " +
+                            "       span.innerText = text; " +
+                            "       n.parentNode.replaceChild(span, n); " +
+                            "       /* Call out to the Java interface */ " +
+                            "       if (window.LingoBridge) { " +
+                            "           window.LingoBridge.requestTranslation(text, uniqueId); " +
+                            "       } " +
+                            "    } " +
+                            "  }); " +
+                            "})();";
+
+                        webView.evaluateJavascript(jsPayload, null);
+                    }
+                }
+            );
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": Failed to hook WebViewClient.onPageFinished: " + e.getMessage());
+        }
+    }
+
+    private void hookWebViewConstructor(LoadPackageParam lpparam) {
+        try {
+            XposedHelpers.findAndHookConstructor(
+                "android.webkit.WebView",
+                lpparam.classLoader,
+                android.content.Context.class,
+                android.util.AttributeSet.class,
+                int.class,
+                int.class,
+                java.util.Map.class,
+                boolean.class, // Target the deepest constructor to ensure it catches all instantiations
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        android.webkit.WebView webView = (android.webkit.WebView) param.thisObject;
+
+                        // Add the JavascriptInterface. "LingoBridge" is the global JS object name.
+                        webView.addJavascriptInterface(new TranslationBridge(webView), "LingoBridge");
+                    }
+                }
+            );
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": Failed to hook WebView constructor: " + e.getMessage());
+        }
+    }
+
+    private void hookCanvasDrawText(LoadPackageParam lpparam) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                "android.graphics.Canvas",
+                lpparam.classLoader,
+                "drawText",
+                String.class, float.class, float.class, android.graphics.Paint.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        String originalText = (String) param.args[0];
+                        if (originalText == null || originalText.trim().isEmpty()) return;
+
+                        String cachedTranslation = TranslationCache.get(originalText);
+
+                        if (cachedTranslation != null) {
+                            param.args[0] = cachedTranslation; // Instant swap on canvas
+                        } else {
+                            // 1. Check if we are already fetching this exact string to prevent spam
+                            if (!TranslationCache.isFetching(originalText)) {
+                                TranslationCache.markFetching(originalText);
+
+                                // 2. Queue in background. When it finishes, the NEXT frame drawn
+                                // will hit the cache and render the translated text.
+                                GeminiTranslator.translate(originalText, new TranslationCallback() {
+                                    @Override
+                                    public void onSuccess(String translatedText) {
+                                        TranslationCache.put(originalText, translatedText);
+                                    }
+                                    @Override
+                                    public void onFailure(String error) {
+                                        TranslationCache.unmarkFetching(originalText);
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+            );
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": Failed to hook Canvas.drawText: " + e.getMessage());
+        }
     }
 
     /**
@@ -492,7 +735,7 @@ public class HookMain implements IXposedHookLoadPackage {
     /**
      * Parse comma-separated whitelist string into Set
      */
-    private Set<String> parseWhitelist(String whitelist) {
+    private static Set<String> parseWhitelist(String whitelist) {
         Set<String> set = new HashSet<>();
         for (String pkg : whitelist.split(",")) {
             pkg = pkg.trim();
@@ -506,7 +749,9 @@ public class HookMain implements IXposedHookLoadPackage {
     /**
      * Helper Cache Class to match execution spec literally
      */
-    private static class TranslationCache {
+    static class TranslationCache {
+        private static final Set<String> fetchingSet = new HashSet<>();
+
         public static String get(String key) {
             synchronized (cacheLock) {
                 return translationCache.get(key);
@@ -518,12 +763,30 @@ public class HookMain implements IXposedHookLoadPackage {
                 translationCache.put(key, value);
             }
         }
+
+        public static boolean isFetching(String key) {
+            synchronized (fetchingSet) {
+                return fetchingSet.contains(key);
+            }
+        }
+
+        public static void markFetching(String key) {
+            synchronized (fetchingSet) {
+                fetchingSet.add(key);
+            }
+        }
+
+        public static void unmarkFetching(String key) {
+            synchronized (fetchingSet) {
+                fetchingSet.remove(key);
+            }
+        }
     }
 
     /**
      * Callback interface to match execution spec literally
      */
-    private interface TranslationCallback {
+    interface TranslationCallback {
         void onSuccess(String translatedText);
         void onFailure(String error);
     }
@@ -531,25 +794,18 @@ public class HookMain implements IXposedHookLoadPackage {
     /**
      * Helper API Class to match execution spec literally
      */
-    private static class GeminiTranslator {
-        private static long lastReloadTime = 0;
+    static class GeminiTranslator {
+        private static String apiKey = "";
+        private static String targetLanguage = "en";
+        private static String service = "Gemini";
+
+        public static void setConfiguration(String svc, String key, String lang) {
+            service = svc;
+            apiKey = key;
+            targetLanguage = lang;
+        }
 
         public static void translate(String text, TranslationCallback callback) {
-            long now = System.currentTimeMillis();
-            if (now - lastReloadTime > 1000) {
-                prefs.reload();
-                lastReloadTime = now;
-            }
-            if (!prefs.getBoolean("module_enabled", true)) {
-                callback.onFailure("Module disabled");
-                return;
-            }
-
-            String service = prefs.getString("service_provider", "Gemini");
-            String apiKeyKey = service.equals("Gemini") ? "gemini_api_key" : "microsoft_api_key";
-            String apiKey = prefs.getString(apiKeyKey, "");
-            String targetLang = prefs.getString("target_lang", "en");
-
             if (apiKey.isEmpty()) {
                 callback.onFailure("API key not configured");
                 return;
@@ -557,7 +813,7 @@ public class HookMain implements IXposedHookLoadPackage {
 
             executor.execute(() -> {
                 try {
-                    client.translate(text, service, apiKey, targetLang, result -> {
+                    client.translate(text, service, apiKey, targetLanguage, result -> {
                         if (result != null && !result.isEmpty()) {
                             callback.onSuccess(result);
                         } else {
