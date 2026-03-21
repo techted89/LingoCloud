@@ -56,7 +56,6 @@ public class HookMain implements IXposedHookLoadPackage {
     private static final ExecutorService executor = Executors.newFixedThreadPool(3);
 
     private static final ThreadLocal<Boolean> isTranslatingStaticLayout = new ThreadLocal<>();
-    private static final ConcurrentHashMap<String, Boolean> staticLayoutEligibilityCache = new ConcurrentHashMap<>();
 
     // Main thread handler for UI updates
     private static Handler mainHandler;
@@ -709,13 +708,6 @@ public class HookMain implements IXposedHookLoadPackage {
 
                         String original = text.toString().trim();
 
-                        Boolean isEligible = staticLayoutEligibilityCache.get(original);
-                        if (isEligible == null) {
-                            isEligible = shouldTranslate(original);
-                            staticLayoutEligibilityCache.put(original, isEligible);
-                        }
-                        if (!isEligible) return;
-
                         String cached = TranslationCache.get(original);
                         if (cached != null) {
                             isTranslatingStaticLayout.set(true);
@@ -755,13 +747,7 @@ public class HookMain implements IXposedHookLoadPackage {
                         if (originalText == null || originalText.length() == 0) return;
 
                         String originalStr = originalText.toString().trim();
-
-                        Boolean isEligible = staticLayoutEligibilityCache.get(originalStr);
-                        if (isEligible == null) {
-                            isEligible = shouldTranslate(originalStr);
-                            staticLayoutEligibilityCache.put(originalStr, isEligible);
-                        }
-                        if (!isEligible) return;
+                        if (!shouldTranslate(originalStr)) return;
 
                         String translated = TranslationCache.get(originalStr);
                         if (translated != null) {

@@ -30,15 +30,7 @@ public class TranslationBridge {
                 }
             }
         };
-        try {
-            this.mainHandler = new Handler(Looper.getMainLooper());
-        } catch (Exception | Error e) {
-            if (Looper.myLooper() != null) {
-                this.mainHandler = new Handler();
-            } else {
-                this.mainHandler = null;
-            }
-        }
+        try { this.mainHandler = new Handler(Looper.getMainLooper()); } catch (Exception e) { this.mainHandler = new Handler(); } catch (Error e) { this.mainHandler = null; }
     }
 
     // Constructor visible for testing
@@ -128,16 +120,7 @@ public class TranslationBridge {
         if (mainHandler != null) {
             mainHandler.post(runnable);
         } else {
-            if (Looper.myLooper() == Looper.getMainLooper() && Looper.getMainLooper() != null) {
-                runnable.run();
-            } else {
-                try {
-                    new Handler(Looper.getMainLooper()).post(runnable);
-                } catch (Exception | Error e) {
-                    // Fallback to inline if MainLooper is somehow entirely unavailable
-                    runnable.run();
-                }
-            }
+            runnable.run();
         }
     }
 }
