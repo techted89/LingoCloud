@@ -13,11 +13,31 @@ import java.util.ArrayList;
 public class TranslationBridge {
     private WebView webView;
     private Handler mainHandler;
+    private JavascriptExecutor jsExecutor;
     private final ConcurrentHashMap<String, List<String>> inFlightRequests = new ConcurrentHashMap<>();
+
+    public interface JavascriptExecutor {
+        void evaluateJavascript(String script);
+    }
 
     public TranslationBridge(WebView webView) {
         this.webView = webView;
-        this.mainHandler = new Handler(Looper.getMainLooper());
+        this.jsExecutor = new JavascriptExecutor() {
+            @Override
+            public void evaluateJavascript(String script) {
+                if (TranslationBridge.this.webView != null) {
+                    TranslationBridge.this.webView.evaluateJavascript(script, null);
+                }
+            }
+        };
+        try { this.mainHandler = new Handler(Looper.getMainLooper()); } catch (Exception e) { this.mainHandler = new Handler(); } catch (Error e) { this.mainHandler = null; }
+    }
+
+    // Constructor visible for testing
+    protected TranslationBridge(WebView webView, JavascriptExecutor jsExecutor, Handler handler) {
+        this.webView = webView;
+        this.jsExecutor = jsExecutor;
+        this.mainHandler = handler;
     }
 
     @JavascriptInterface
@@ -66,31 +86,41 @@ public class TranslationBridge {
                 synchronized (inFlightRequests) {
                     inFlightRequests.remove(originalText);
                 }
-                XposedBridge.log("WebView Translation Failed: " + error);
+                try { XposedBridge.log("WebView Translation Failed: " + error); } catch (Throwable t) {}
             }
         });
     }
 
     private void injectTranslationBackToDOM(final String domNodeIdsJson, final String translatedText) {
-        mainHandler.post(new Runnable() {
+        Runnable runnable = new Runnable() {
             @Override
             public void run() {
-                String safeText = JSONObject.quote(translatedText);
-                String safeIds = JSONObject.quote(domNodeIdsJson);
+                try {
+                    String safeText = JSONObject.quote(translatedText);
+                    String safeIds = JSONObject.quote(domNodeIdsJson);
 
-                // Construct JS to update the specific nodes by array
-                String jsUpdate = "javascript:(function(idsJsonStr, text) { " +
-                        "  try { " +
-                        "    var ids = JSON.parse(idsJsonStr); " +
-                        "    ids.forEach(function(id) { " +
-                        "      var el = document.getElementById(id); " +
-                        "      if (el) { el.innerText = text; } " +
-                        "    }); " +
-                        "  } catch(e) { console.error('LingoCloud JS Error: ' + e); } " +
-                        "})(" + safeIds + ", " + safeText + ");";
+                    // Construct JS to update the specific nodes by array
+                    String jsUpdate = "javascript:(function(idsJsonStr, text) { " +
+                            "  try { " +
+                            "    var ids = JSON.parse(idsJsonStr); " +
+                            "    ids.forEach(function(id) { " +
+                            "      var el = document.getElementById(id); " +
+                            "      if (el) { el.innerText = text; } " +
+                            "    }); " +
+                            "  } catch(e) { console.error('LingoCloud JS Error: ' + e); } " +
+                            "})(" + safeIds + ", " + safeText + ");";
 
-                webView.evaluateJavascript(jsUpdate, null);
+                    if (jsExecutor != null) { jsExecutor.evaluateJavascript(jsUpdate); }
+                } catch (Exception e) {
+                    try { XposedBridge.log("LingoCloud JS Evaluation Error: " + e); } catch (Throwable t) {}
+                }
             }
-        });
+        };
+
+        if (mainHandler != null) {
+            mainHandler.post(runnable);
+        } else {
+            runnable.run();
+        }
     }
 }
