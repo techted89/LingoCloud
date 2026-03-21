@@ -11,8 +11,10 @@ import de.robv.android.xposed.XSharedPreferences;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam;
+import android.view.accessibility.AccessibilityNodeInfo;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -52,6 +54,9 @@ public class HookMain implements IXposedHookLoadPackage {
 
     // Thread pool for async translation (prevents UI blocking)
     private static final ExecutorService executor = Executors.newFixedThreadPool(3);
+
+    private static final ThreadLocal<Boolean> isTranslatingStaticLayout = new ThreadLocal<>();
+    private static final ConcurrentHashMap<String, Boolean> staticLayoutEligibilityCache = new ConcurrentHashMap<>();
 
     // Main thread handler for UI updates
     private static Handler mainHandler;
@@ -144,6 +149,136 @@ public class HookMain implements IXposedHookLoadPackage {
 
         // Hook 7: Intercepting Custom Game Engines / Heavy UI: Canvas.drawText
         hookCanvasDrawText(lpparam);
+
+        // Hook 8: Deep Discovery - Tooltips
+        hookTooltipText(lpparam);
+
+        // Hook 9: Deep Discovery - Content Description
+        hookContentDescription(lpparam);
+
+        // Hook 10: Deep Discovery - Accessibility Delegate for embedded/complex views
+        hookAccessibilityNodeInfo(lpparam);
+    }
+
+    private void translateCharSequenceArgument(XC_MethodHook.MethodHookParam param) {
+        if (param.args[0] == null || !(param.args[0] instanceof CharSequence)) return;
+
+        CharSequence originalText = (CharSequence) param.args[0];
+        if (originalText.length() == 0) return;
+
+        final String textStr = originalText.toString().trim();
+        if (!shouldTranslate(textStr)) return;
+
+        String cachedTranslation = TranslationCache.get(textStr);
+        if (cachedTranslation != null) {
+            param.args[0] = cachedTranslation;
+        } else {
+            GeminiTranslator.translate(textStr, new TranslationCallback() {
+                @Override
+                public void onSuccess(String translatedText) {
+                    TranslationCache.put(textStr, translatedText);
+                }
+                @Override
+                public void onFailure(String error) {
+                    // Consider logging failures for debugging purposes
+                    XposedBridge.log(TAG + ": Translation Failed: " + error);
+                }
+            });
+        }
+    }
+
+    private void hookTooltipText(LoadPackageParam lpparam) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                "android.view.View",
+                lpparam.classLoader,
+                "setTooltipText",
+                CharSequence.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        translateCharSequenceArgument(param);
+                    }
+                }
+            );
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": Failed to hook View.setTooltipText: " + e.getMessage());
+        }
+    }
+
+    private void hookContentDescription(LoadPackageParam lpparam) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                "android.view.View",
+                lpparam.classLoader,
+                "setContentDescription",
+                CharSequence.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        translateCharSequenceArgument(param);
+                    }
+                }
+            );
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": Failed to hook View.setContentDescription: " + e.getMessage());
+        }
+    }
+
+    private void hookAccessibilityNodeInfo(LoadPackageParam lpparam) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                "android.view.View",
+                lpparam.classLoader,
+                "onInitializeAccessibilityNodeInfo",
+                AccessibilityNodeInfo.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        AccessibilityNodeInfo info = (AccessibilityNodeInfo) param.args[0];
+                        if (info == null) return;
+
+                        CharSequence text = info.getText();
+                        if (text != null && text.length() > 0) {
+                            String textStr = text.toString().trim();
+                            if (shouldTranslate(textStr)) {
+                                String translated = TranslationCache.get(textStr);
+                                if (translated != null) {
+                                    info.setText(translated);
+                                } else {
+                                    GeminiTranslator.translate(textStr, new TranslationCallback() {
+                                        @Override
+                                        public void onSuccess(String t) { TranslationCache.put(textStr, t); }
+                                        @Override
+                                        public void onFailure(String e) {}
+                                    });
+                                }
+                            }
+                        }
+
+                        CharSequence contentDesc = info.getContentDescription();
+                        if (contentDesc != null && contentDesc.length() > 0) {
+                            String descStr = contentDesc.toString().trim();
+                            if (shouldTranslate(descStr)) {
+                                String translated = TranslationCache.get(descStr);
+                                if (translated != null) {
+                                    info.setContentDescription(translated);
+                                } else {
+                                    GeminiTranslator.translate(descStr, new TranslationCallback() {
+                                        @Override
+                                        public void onSuccess(String t) { TranslationCache.put(descStr, t); }
+                                        @Override
+                                        public void onFailure(String e) {}
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            );
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": Failed to hook View.onInitializeAccessibilityNodeInfo: " + e.getMessage());
+        }
     }
 
     private void hookToastMakeText(LoadPackageParam lpparam) {
@@ -564,30 +699,94 @@ public class HookMain implements IXposedHookLoadPackage {
                 new XC_MethodHook() {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                        // Access the mText field of the Builder
+                        if (Boolean.TRUE.equals(isTranslatingStaticLayout.get())) return;
+
                         CharSequence text = (CharSequence) XposedHelpers.getObjectField(
                             param.thisObject, "mText"
                         );
 
-                        if (text == null) return;
+                        if (text == null || text.length() == 0) return;
 
                         String original = text.toString().trim();
-                        if (!shouldTranslate(original)) return;
 
-                        // Check cache first
-                        String cached;
-                        synchronized (cacheLock) {
-                            cached = translationCache.get(original);
+                        Boolean isEligible = staticLayoutEligibilityCache.get(original);
+                        if (isEligible == null) {
+                            isEligible = shouldTranslate(original);
+                            staticLayoutEligibilityCache.put(original, isEligible);
                         }
+                        if (!isEligible) return;
+
+                        String cached = TranslationCache.get(original);
                         if (cached != null) {
-                            XposedHelpers.setObjectField(param.thisObject, "mText", cached);
+                            isTranslatingStaticLayout.set(true);
+                            try {
+                                XposedHelpers.setObjectField(param.thisObject, "mText", cached);
+                            } finally {
+                                isTranslatingStaticLayout.remove();
+                            }
+                        } else {
+                            GeminiTranslator.translate(original, new TranslationCallback() {
+                                @Override
+                                public void onSuccess(String translatedText) {
+                                    TranslationCache.put(original, translatedText);
+                                }
+                                @Override
+                                public void onFailure(String error) {}
+                            });
                         }
-                        // Note: Async translation not supported here (build() is synchronous)
+                    }
+                }
+            );
+
+            Class<?> staticLayoutClass = XposedHelpers.findClass(
+                "android.text.StaticLayout",
+                lpparam.classLoader
+            );
+
+            XposedHelpers.findAndHookMethod(
+                staticLayoutClass,
+                "getText",
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        if (Boolean.TRUE.equals(isTranslatingStaticLayout.get())) return;
+
+                        CharSequence originalText = (CharSequence) param.getResult();
+                        if (originalText == null || originalText.length() == 0) return;
+
+                        String originalStr = originalText.toString().trim();
+
+                        Boolean isEligible = staticLayoutEligibilityCache.get(originalStr);
+                        if (isEligible == null) {
+                            isEligible = shouldTranslate(originalStr);
+                            staticLayoutEligibilityCache.put(originalStr, isEligible);
+                        }
+                        if (!isEligible) return;
+
+                        String translated = TranslationCache.get(originalStr);
+                        if (translated != null) {
+                            isTranslatingStaticLayout.set(true);
+                            try {
+                                param.setResult(translated);
+                            } finally {
+                                isTranslatingStaticLayout.remove();
+                            }
+                        } else {
+                            // Async request to LingoCloud engine
+                            GeminiTranslator.translate(originalStr, new TranslationCallback() {
+                                @Override
+                                public void onSuccess(String translatedText) {
+                                    TranslationCache.put(originalStr, translatedText);
+                                }
+                                @Override
+                                public void onFailure(String error) {}
+                            });
+                        }
                     }
                 }
             );
         } catch (Exception e) {
-            XposedBridge.log(TAG + ": StaticLayout.Builder hook failed (optional): " + e.getMessage());
+            XposedBridge.log(TAG + ": StaticLayout hook failed (optional): " + e.getMessage());
         }
     }
 

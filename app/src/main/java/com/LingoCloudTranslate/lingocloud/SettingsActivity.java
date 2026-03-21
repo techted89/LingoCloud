@@ -54,9 +54,17 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void startTranslationService() {
-        Intent serviceIntent = new Intent(this, TranslationServer.class);
-        startForegroundService(serviceIntent);
-        Log.d(TAG, "TranslationServer started");
+        try {
+            Intent serviceIntent = new Intent(this, TranslationServer.class);
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent);
+            } else {
+                startService(serviceIntent);
+            }
+            Log.d(TAG, "TranslationServer started");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to start TranslationServer. Ensure permissions are granted.", e);
+        }
     }
 
     /**
@@ -124,7 +132,9 @@ public class SettingsActivity extends AppCompatActivity {
                     EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
                 );
             } catch (Exception e) {
-                Log.e(TAG, "Failed to initialize encrypted preferences", e);
+                Log.e(TAG, "Failed to initialize encrypted preferences: " + e.getMessage(), e);
+                // Safe fallback if hardware keystore is unavailable
+                encryptedPrefs = null;
             }
         }
 
