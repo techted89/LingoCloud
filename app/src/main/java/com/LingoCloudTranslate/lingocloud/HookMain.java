@@ -158,6 +158,33 @@ public class HookMain implements IXposedHookLoadPackage {
         hookAccessibilityNodeInfo(lpparam);
     }
 
+    private void translateCharSequenceArgument(XC_MethodHook.MethodHookParam param) {
+        if (param.args[0] == null || !(param.args[0] instanceof CharSequence)) return;
+
+        CharSequence originalText = (CharSequence) param.args[0];
+        if (originalText.length() == 0) return;
+
+        final String textStr = originalText.toString().trim();
+        if (!shouldTranslate(textStr)) return;
+
+        String cachedTranslation = TranslationCache.get(textStr);
+        if (cachedTranslation != null) {
+            param.args[0] = cachedTranslation;
+        } else {
+            GeminiTranslator.translate(textStr, new TranslationCallback() {
+                @Override
+                public void onSuccess(String translatedText) {
+                    TranslationCache.put(textStr, translatedText);
+                }
+                @Override
+                public void onFailure(String error) {
+                    // Consider logging failures for debugging purposes
+                    XposedBridge.log(TAG + ": Translation Failed: " + error);
+                }
+            });
+        }
+    }
+
     private void hookTooltipText(LoadPackageParam lpparam) {
         try {
             XposedHelpers.findAndHookMethod(
@@ -168,25 +195,7 @@ public class HookMain implements IXposedHookLoadPackage {
                 new XC_MethodHook() {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                        CharSequence originalText = (CharSequence) param.args[0];
-                        if (originalText == null || originalText.length() == 0) return;
-
-                        String textStr = originalText.toString().trim();
-                        if (!shouldTranslate(textStr)) return;
-
-                        String cachedTranslation = TranslationCache.get(textStr);
-                        if (cachedTranslation != null) {
-                            param.args[0] = cachedTranslation;
-                        } else {
-                            GeminiTranslator.translate(textStr, new TranslationCallback() {
-                                @Override
-                                public void onSuccess(String translatedText) {
-                                    TranslationCache.put(textStr, translatedText);
-                                }
-                                @Override
-                                public void onFailure(String error) {}
-                            });
-                        }
+                        translateCharSequenceArgument(param);
                     }
                 }
             );
@@ -205,25 +214,7 @@ public class HookMain implements IXposedHookLoadPackage {
                 new XC_MethodHook() {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                        CharSequence originalText = (CharSequence) param.args[0];
-                        if (originalText == null || originalText.length() == 0) return;
-
-                        String textStr = originalText.toString().trim();
-                        if (!shouldTranslate(textStr)) return;
-
-                        String cachedTranslation = TranslationCache.get(textStr);
-                        if (cachedTranslation != null) {
-                            param.args[0] = cachedTranslation;
-                        } else {
-                            GeminiTranslator.translate(textStr, new TranslationCallback() {
-                                @Override
-                                public void onSuccess(String translatedText) {
-                                    TranslationCache.put(textStr, translatedText);
-                                }
-                                @Override
-                                public void onFailure(String error) {}
-                            });
-                        }
+                        translateCharSequenceArgument(param);
                     }
                 }
             );
