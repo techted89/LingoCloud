@@ -49,9 +49,18 @@ public class TranslationServer extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "TranslationServer started");
 
-        // Start as foreground service (required for Android 15)
-        startForeground(NOTIFICATION_ID, buildNotification());
-        isRunning = true;
+        try {
+            // Start as foreground service (required for Android 15)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, buildNotification(), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+            } else {
+                startForeground(NOTIFICATION_ID, buildNotification());
+            }
+            isRunning = true;
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to start Foreground Service: " + e.getMessage());
+            // Android 12+ throws ForegroundServiceStartNotAllowedException
+        }
 
         // TODO: Start local HTTP server if implementing client-server architecture
         // startLocalServer();

@@ -14,6 +14,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam;
 import android.view.accessibility.AccessibilityNodeInfo;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -706,7 +707,6 @@ public class HookMain implements IXposedHookLoadPackage {
                         if (text == null || text.length() == 0) return;
 
                         String original = text.toString().trim();
-                        if (!shouldTranslate(original)) return;
 
                         String cached = TranslationCache.get(original);
                         if (cached != null) {

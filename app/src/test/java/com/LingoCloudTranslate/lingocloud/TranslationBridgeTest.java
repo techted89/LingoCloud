@@ -6,8 +6,9 @@ import android.webkit.WebView;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -57,6 +58,22 @@ public class TranslationBridgeTest {
 
     @Test
     public void testRequestTranslation_PrimedCache() throws Exception {
+        try (MockedStatic<HookMain.TranslationCache> mockedCache = mockStatic(HookMain.TranslationCache.class)) {
+            mockedCache.when(() -> HookMain.TranslationCache.get("Hello")).thenReturn("Hola");
+
+            bridge.requestTranslation("Hello", "[\"node1\"]");
+
+            ArgumentCaptor<String> jsCaptor = ArgumentCaptor.forClass(String.class);
+            verify(mockJsExecutor).evaluateJavascript(jsCaptor.capture());
+
+            String js = jsCaptor.getValue();
+
+            assertTrue(js.contains("JSON.parse"));
+            assertTrue(js.contains("document.getElementById"));
+            assertTrue(js.contains("innerText = text"));
+            assertTrue(js.contains("\"Hola\""));
+            assertTrue(js.contains("\"[\\\"node1\\\"]\""));
+        }
         // Instead of testing requestTranslation -> checkCache -> injectTranslationBackToDOM
         // let's invoke injectTranslationBackToDOM via reflection directly, testing the bridge correctly.
         // Because HookMain.TranslationCache.get() will always return null in tests because LruCache is stubbed.
