@@ -45,6 +45,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".AppSelectionActivity"
+            android:exported="false"
+            android:label="App Whitelist" />
+
         <!-- Translation Foreground Service -->
         <service
             android:name=".TranslationServer"

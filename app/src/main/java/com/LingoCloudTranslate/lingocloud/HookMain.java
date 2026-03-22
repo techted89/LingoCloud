@@ -48,8 +48,9 @@ public class HookMain implements IXposedHookLoadPackage {
     private static final TranslationClient client = new TranslationClient();
 
     // Memory cache to avoid repeated API calls (500 entries)
-    private static final LruCache<String, String> translationCache = new LruCache<>(500);
-    private static final Object cacheLock = new Object();
+    // Make these visible for testing
+    static LruCache<String, String> translationCache = new LruCache<>(500);
+    static final Object cacheLock = new Object();
 
     // Thread pool for async translation (prevents UI blocking)
     private static final ExecutorService executor = Executors.newFixedThreadPool(3);
@@ -170,6 +171,15 @@ public class HookMain implements IXposedHookLoadPackage {
 
         // Hook 10: Deep Discovery - Accessibility Delegate for embedded/complex views
         hookAccessibilityNodeInfo(lpparam);
+
+        // Hook 11: TextView.setHint()
+        hookTextViewSetHint(lpparam);
+
+        // Hook 12: TextView.append()
+        hookTextViewAppend(lpparam);
+
+        // Hook 13: AlertDialog.Builder setTitle/setMessage
+        hookAlertDialogBuilder(lpparam);
     }
 
     private void translateCharSequenceArgument(XC_MethodHook.MethodHookParam param) {
@@ -209,7 +219,39 @@ public class HookMain implements IXposedHookLoadPackage {
                 new XC_MethodHook() {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                        translateCharSequenceArgument(param);
+                        if (param.args[0] == null || !(param.args[0] instanceof CharSequence)) return;
+
+                        CharSequence originalText = (CharSequence) param.args[0];
+                        if (originalText.length() == 0) return;
+
+                        final String textStr = originalText.toString().trim();
+                        if (!shouldTranslate(textStr)) return;
+
+                        String cachedTranslation = TranslationCache.get(textStr);
+                        if (cachedTranslation != null) {
+                            param.args[0] = cachedTranslation;
+                        } else {
+                            final android.view.View view = (android.view.View) param.thisObject;
+                            GeminiTranslator.translate(textStr, new TranslationCallback() {
+                                @Override
+                                public void onSuccess(final String translatedText) {
+                                    TranslationCache.put(textStr, translatedText);
+                                    if (view != null) {
+                                        view.post(() -> {
+                                            try {
+                                                view.setTooltipText(translatedText);
+                                            } catch (Exception ex) {
+                                                XposedBridge.log(TAG + ": Async setTooltipText failed: " + ex);
+                                            }
+                                        });
+                                    }
+                                }
+                                @Override
+                                public void onFailure(String error) {
+                                    XposedBridge.log(TAG + ": Translation Failed: " + error);
+                                }
+                            });
+                        }
                     }
                 }
             );
@@ -228,7 +270,41 @@ public class HookMain implements IXposedHookLoadPackage {
                 new XC_MethodHook() {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
-                        translateCharSequenceArgument(param);
+                        if (param.args[0] == null || !(param.args[0] instanceof CharSequence)) return;
+
+                        CharSequence originalText = (CharSequence) param.args[0];
+                        if (originalText.length() == 0) return;
+
+                        final String textStr = originalText.toString().trim();
+                        if (!shouldTranslate(textStr)) return;
+
+                        String cachedTranslation = TranslationCache.get(textStr);
+                        if (cachedTranslation != null) {
+                            param.args[0] = cachedTranslation;
+                            param.args[1] = 0;
+                            param.args[2] = cachedTranslation.length();
+                        } else {
+                            final android.widget.TextView view = (android.widget.TextView) param.thisObject;
+                            GeminiTranslator.translate(textStr, new TranslationCallback() {
+                                @Override
+                                public void onSuccess(final String translatedText) {
+                                    TranslationCache.put(textStr, translatedText);
+                                    if (view != null) {
+                                        view.post(() -> {
+                                            try {
+                                                view.append(translatedText);
+                                            } catch (Exception ex) {
+                                                XposedBridge.log(TAG + ": Async append failed: " + ex);
+                                            }
+                                        });
+                                    }
+                                }
+                                @Override
+                                public void onFailure(String error) {
+                                    XposedBridge.log(TAG + ": Translation Failed: " + error);
+                                }
+                            });
+                        }
                     }
                 }
             );
@@ -294,6 +370,78 @@ public class HookMain implements IXposedHookLoadPackage {
             );
         } catch (Exception e) {
             XposedBridge.log(TAG + ": Failed to hook View.onInitializeAccessibilityNodeInfo: " + e.getMessage());
+        }
+    }
+
+    private void hookTextViewSetHint(LoadPackageParam lpparam) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                "android.widget.TextView",
+                lpparam.classLoader,
+                "setHint",
+                CharSequence.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        translateCharSequenceArgument(param);
+                    }
+                }
+            );
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": Failed to hook TextView.setHint: " + e.getMessage());
+        }
+    }
+
+    private void hookTextViewAppend(LoadPackageParam lpparam) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                "android.widget.TextView",
+                lpparam.classLoader,
+                "append",
+                CharSequence.class,
+                int.class,
+                int.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        translateCharSequenceArgument(param);
+                    }
+                }
+            );
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": Failed to hook TextView.append: " + e.getMessage());
+        }
+    }
+
+    private void hookAlertDialogBuilder(LoadPackageParam lpparam) {
+        try {
+            Class<?> builderClass = XposedHelpers.findClass("android.app.AlertDialog$Builder", lpparam.classLoader);
+
+            XposedHelpers.findAndHookMethod(
+                builderClass,
+                "setTitle",
+                CharSequence.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        translateCharSequenceArgument(param);
+                    }
+                }
+            );
+
+            XposedHelpers.findAndHookMethod(
+                builderClass,
+                "setMessage",
+                CharSequence.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        translateCharSequenceArgument(param);
+                    }
+                }
+            );
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": Failed to hook AlertDialog.Builder: " + e.getMessage());
         }
     }
 

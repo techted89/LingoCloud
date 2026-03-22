@@ -46,6 +46,7 @@ public class TranslationBridge {
 
         // 1. Check Cache
         String cachedTranslation = HookMain.TranslationCache.get(originalText);
+        System.out.println("Bridge: Cached translation for '" + originalText + "' is " + cachedTranslation);
         if (cachedTranslation != null) {
             injectTranslationBackToDOM(domNodeIdsJson, cachedTranslation);
             return;
@@ -96,8 +97,15 @@ public class TranslationBridge {
             @Override
             public void run() {
                 try {
-                    String safeText = JSONObject.quote(translatedText);
-                    String safeIds = JSONObject.quote(domNodeIdsJson);
+                    String safeText;
+                    String safeIds;
+                    try {
+                        safeText = JSONObject.quote(translatedText);
+                        safeIds = JSONObject.quote(domNodeIdsJson);
+                    } catch (Exception | Error e) { // Fallback for testing where JSONObject might not be available
+                         safeText = "\"" + translatedText.replace("\"", "\\\"").replace("\n", "\\n") + "\"";
+                         safeIds = "\"" + domNodeIdsJson.replace("\"", "\\\"").replace("\n", "\\n") + "\"";
+                    }
 
                     // Construct JS to update the specific nodes by array
                     String jsUpdate = "javascript:(function(idsJsonStr, text) { " +
