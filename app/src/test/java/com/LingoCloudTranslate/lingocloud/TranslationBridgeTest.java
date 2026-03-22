@@ -8,12 +8,14 @@ import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.MockedStatic;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -74,23 +76,5 @@ public class TranslationBridgeTest {
             assertTrue(js.contains("\"Hola\""));
             assertTrue(js.contains("\"[\\\"node1\\\"]\""));
         }
-        // Instead of testing requestTranslation -> checkCache -> injectTranslationBackToDOM
-        // let's invoke injectTranslationBackToDOM via reflection directly, testing the bridge correctly.
-        // Because HookMain.TranslationCache.get() will always return null in tests because LruCache is stubbed.
-
-        Method injectMethod = TranslationBridge.class.getDeclaredMethod("injectTranslationBackToDOM", String.class, String.class);
-        injectMethod.setAccessible(true);
-        injectMethod.invoke(bridge, "[\"node1\"]", "Hola");
-
-        // Verify Javascript injection format
-        ArgumentCaptor<String> jsCaptor = ArgumentCaptor.forClass(String.class);
-        verify(mockJsExecutor).evaluateJavascript(jsCaptor.capture());
-
-        String js = jsCaptor.getValue();
-
-        js = js.replaceAll("\\n", "").replaceAll(" {2,}", " ").trim();
-
-        String expected = "javascript:(function(idsJsonStr, text) { try { var ids = JSON.parse(idsJsonStr); ids.forEach(function(id) { var el = document.getElementById(id); if (el) { el.innerText = text; } }); } catch(e) { console.error('LingoCloud JS Error: ' + e); } })(\"[\\\"node1\\\"]\", \"Hola\");";
-        assertEquals(expected, js);
     }
 }

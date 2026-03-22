@@ -58,7 +58,10 @@ public class TranslationServer extends Service {
             }
             isRunning = true;
         } catch (Exception e) {
-            Log.e(TAG, "Failed to start Foreground Service: " + e.getMessage());
+            Log.e(TAG, "Failed to start Foreground Service: " + e.getMessage(), e);
+            isRunning = false;
+            stopSelf();
+            return START_NOT_STICKY;
             // Android 12+ throws ForegroundServiceStartNotAllowedException
         }
 
