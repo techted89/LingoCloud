@@ -239,31 +239,33 @@ public class SettingsActivity extends AppCompatActivity {
         }
 
         private void setupAppWhitelist() {
-            MultiSelectListPreference whitelistPref = findPreference("app_whitelist");
+            Preference whitelistPref = findPreference("app_whitelist");
             if (whitelistPref != null) {
-                PackageManager pm = requireContext().getPackageManager();
-                List<ApplicationInfo> apps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
-
-                List<String> entryValues = new ArrayList<>();
-                List<String> entries = new ArrayList<>();
-
-                for (ApplicationInfo app : apps) {
-                    if ((app.flags & ApplicationInfo.FLAG_SYSTEM) == 0 || (app.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0) {
-                        entryValues.add(app.packageName);
-                        entries.add(app.loadLabel(pm).toString());
-                    }
-                }
-
-                whitelistPref.setEntries(entries.toArray(new CharSequence[0]));
-                whitelistPref.setEntryValues(entryValues.toArray(new CharSequence[0]));
-
-                whitelistPref.setSummaryProvider(preference -> {
-                    java.util.Set<String> values = ((MultiSelectListPreference) preference).getValues();
-                    if (values == null || values.isEmpty()) {
-                        return "No apps selected (LingoCloud is disabled for all apps by default if whitelist is empty)";
-                    }
-                    return values.size() + " apps selected";
+                whitelistPref.setOnPreferenceClickListener(preference -> {
+                    Intent intent = new Intent(requireContext(), AppSelectionActivity.class);
+                    startActivity(intent);
+                    return true;
                 });
+            }
+        }
+
+        @Override
+        public void onResume() {
+            super.onResume();
+            updateAppWhitelistSummary();
+        }
+
+        private void updateAppWhitelistSummary() {
+            Preference whitelistPref = findPreference("app_whitelist");
+            if (whitelistPref != null) {
+                java.util.Set<String> values = requireContext()
+                        .getSharedPreferences(PREF_FILE, android.content.Context.MODE_PRIVATE)
+                        .getStringSet("app_whitelist", new java.util.HashSet<>());
+                if (values == null || values.isEmpty()) {
+                    whitelistPref.setSummary("No apps selected (LingoCloud is disabled for all apps by default if whitelist is empty)");
+                } else {
+                    whitelistPref.setSummary(values.size() + " apps selected");
+                }
             }
         }
 
@@ -278,16 +280,11 @@ public class SettingsActivity extends AppCompatActivity {
         }
 
         private void testApiConnection() {
-            String service = getPreferenceManager()
-                .getSharedPreferences()
-                .getString("service_provider", "Gemini");
+            android.content.SharedPreferences prefs = requireContext().getSharedPreferences(PREF_FILE, android.content.Context.MODE_PRIVATE);
+            String service = prefs.getString("service_provider", "Gemini");
             String apiKeyKey = service.equals("Gemini") ? "gemini_api_key" : "microsoft_api_key";
-            String apiKey = getPreferenceManager()
-                .getSharedPreferences()
-                .getString(apiKeyKey, "");
-            String targetLang = getPreferenceManager()
-                .getSharedPreferences()
-                .getString("target_lang", "en");
+            String apiKey = prefs.getString(apiKeyKey, "");
+            String targetLang = prefs.getString("target_lang", "en");
 
             if (apiKey.isEmpty()) {
                 Toast.makeText(requireContext(),

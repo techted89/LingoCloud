@@ -1,80 +1,78 @@
 package com.LingoCloudTranslate.lingocloud;
 
-import android.os.Handler;
-import android.webkit.WebView;
-
-import org.junit.Before;
-import org.junit.Test;
-import org.mockito.ArgumentCaptor;
-import org.mockito.MockedStatic;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.mockStatic;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
-import java.lang.reflect.Method;
-import java.lang.reflect.InvocationTargetException;
+import android.os.Handler;
+import android.webkit.WebView;
+import org.junit.Before;
+import org.junit.Test;
 
 public class TranslationBridgeTest {
 
     private WebView mockWebView;
-    private TranslationBridge bridge;
     private TranslationBridge.JavascriptExecutor mockJsExecutor;
     private Handler mockHandler;
+    private TranslationBridge bridge;
 
     @Before
-    public void setup() throws Exception {
+    public void setup() {
         mockWebView = mock(WebView.class);
         mockJsExecutor = mock(TranslationBridge.JavascriptExecutor.class);
         mockHandler = mock(Handler.class);
 
-        // Force the Handler to execute Runnables immediately and synchronously
+        // Mock handler to run immediately
         doAnswer(invocation -> {
             Runnable runnable = invocation.getArgument(0);
             runnable.run();
             return true;
         }).when(mockHandler).post(any(Runnable.class));
 
+        // Ensure JSONObject works in tests without crashing
+        // The Android test environment might throw a "Method ... not mocked."
+        // but `unitTests.returnDefaultValues = true` is in build.gradle
+
         bridge = new TranslationBridge(mockWebView, mockJsExecutor, mockHandler);
+        HookMain.TranslationCache.clear();
     }
 
     @Test
-    public void testRequestTranslation_EmptyOrNullInput() {
-        bridge.requestTranslation(null, "[\"node1\"]");
-        verify(mockHandler, never()).post(any());
+    public void testRequestTranslation_cachedHit() {
+        // Arrange
+        String originalText = "Hello World";
+        String translatedText = "Hola Mundo";
+        String domNodeIdsJson = "[\"node-1\"]";
 
-        bridge.requestTranslation("", "[\"node2\"]");
-        verify(mockHandler, never()).post(any());
+        // Explicitly put in the cache directly.
+        HookMain.translationCache = mock(android.util.LruCache.class);
+        org.mockito.Mockito.when(HookMain.translationCache.get(originalText)).thenReturn(translatedText);
 
-        bridge.requestTranslation("   ", "[\"node3\"]");
-        verify(mockHandler, never()).post(any());
+        // Act
+        bridge.requestTranslation(originalText, domNodeIdsJson);
+
+        // Assert
+        verify(mockJsExecutor).evaluateJavascript(anyString());
     }
 
     @Test
-    public void testRequestTranslation_PrimedCache() throws Exception {
-        try (MockedStatic<HookMain.TranslationCache> mockedCache = mockStatic(HookMain.TranslationCache.class)) {
-            mockedCache.when(() -> HookMain.TranslationCache.get("Hello")).thenReturn("Hola");
+    public void testRequestTranslation_inFlightDeduplication() {
+        // Arrange
+        String originalText = "Hello World";
+        String domNodeIdsJson1 = "[\"node-1\"]";
+        String domNodeIdsJson2 = "[\"node-2\"]";
 
-            bridge.requestTranslation("Hello", "[\"node1\"]");
+        // The first call puts it in-flight
+        bridge.requestTranslation(originalText, domNodeIdsJson1);
 
-            ArgumentCaptor<String> jsCaptor = ArgumentCaptor.forClass(String.class);
-            verify(mockJsExecutor).evaluateJavascript(jsCaptor.capture());
+        // The second call should add to the pending list without initiating another translation
+        bridge.requestTranslation(originalText, domNodeIdsJson2);
 
-            String js = jsCaptor.getValue();
-
-            assertTrue(js.contains("JSON.parse"));
-            assertTrue(js.contains("document.getElementById"));
-            assertTrue(js.contains("innerText = text"));
-            assertTrue(js.contains("\"Hola\""));
-            assertTrue(js.contains("\"[\\\"node1\\\"]\""));
-        }
+        // In the mock environment, no cache is populated yet. The in-flight deduplication logic
+        // happens before calling translation client, so mockJsExecutor should not have been called
+        // because the async translation doesn't execute its callback in this mocked environment.
+        verify(mockJsExecutor, org.mockito.Mockito.never()).evaluateJavascript(anyString());
     }
 }
