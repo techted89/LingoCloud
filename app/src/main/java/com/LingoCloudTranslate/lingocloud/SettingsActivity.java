@@ -79,6 +79,22 @@ public class SettingsActivity extends AppCompatActivity {
         public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
             getPreferenceManager().setSharedPreferencesName(PREF_FILE);
             getPreferenceManager().setSharedPreferencesMode(android.content.Context.MODE_PRIVATE);
+
+            // Clean up legacy string-based app_whitelist before loading preferences
+            try {
+                android.content.SharedPreferences prefs = getPreferenceManager().getSharedPreferences();
+                if (prefs.contains("app_whitelist")) {
+                    try {
+                        prefs.getStringSet("app_whitelist", null);
+                    } catch (ClassCastException e) {
+                        Log.w(TAG, "Legacy string-based app_whitelist found. Clearing it to prevent ClassCastException.");
+                        prefs.edit().remove("app_whitelist").apply();
+                    }
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to clean legacy preferences", e);
+            }
+
             setPreferencesFromResource(R.xml.root_preferences, rootKey);
 
             // Initialize encrypted preferences
