@@ -14,7 +14,6 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam;
 import android.view.accessibility.AccessibilityNodeInfo;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -103,7 +102,21 @@ public class HookMain implements IXposedHookLoadPackage {
         String backupKeyKey = service.equals("Gemini") ? "gemini_api_key_backup" : "microsoft_api_key_backup";
         String apiKey = prefs.getString(apiKeyKey, "");
         String backupApiKey = prefs.getString(backupKeyKey, "");
-        Set<String> enabledApps = prefs.getStringSet("app_whitelist", new HashSet<>());
+
+        Set<String> enabledApps;
+        try {
+            enabledApps = prefs.getStringSet("app_whitelist", new HashSet<>());
+        } catch (ClassCastException e) {
+            XposedBridge.log(TAG + ": Legacy string-based app_whitelist found in HookMain. Clearing to prevent crash.");
+            String legacy = prefs.getString("app_whitelist", null);
+            if (legacy != null) {
+                enabledApps = parseWhitelist(legacy);
+            } else {
+                enabledApps = new HashSet<>();
+            }
+            prefs.edit().remove("app_whitelist").apply();
+        }
+
         String targetLanguage = prefs.getString("target_lang", "en");
 
         // 3. Dynamic Package Filtering
@@ -249,7 +262,9 @@ public class HookMain implements IXposedHookLoadPackage {
                                         @Override
                                         public void onSuccess(String t) { TranslationCache.put(textStr, t); }
                                         @Override
-                                        public void onFailure(String e) {}
+                                        public void onFailure(String e) {
+                                            XposedBridge.log(TAG + ": Translation Failed: " + e);
+                                        }
                                     });
                                 }
                             }
@@ -267,7 +282,9 @@ public class HookMain implements IXposedHookLoadPackage {
                                         @Override
                                         public void onSuccess(String t) { TranslationCache.put(descStr, t); }
                                         @Override
-                                        public void onFailure(String e) {}
+                                        public void onFailure(String e) {
+                                            XposedBridge.log(TAG + ": Translation Failed: " + e);
+                                        }
                                     });
                                 }
                             }
@@ -707,6 +724,7 @@ public class HookMain implements IXposedHookLoadPackage {
                         if (text == null || text.length() == 0) return;
 
                         String original = text.toString().trim();
+                        if (!shouldTranslate(original)) return;
 
                         String cached = TranslationCache.get(original);
                         if (cached != null) {

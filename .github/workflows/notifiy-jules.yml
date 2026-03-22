@@ -1,96 +1,36 @@
-name: Notify Jules of AI Reviews
+name: Jules AI Automation Trigger
 
 on:
-  pull_request_review:
-    types: [submitted]
   pull_request_review_comment:
     types: [created]
   issue_comment:
     types: [created]
-permissions:
-      issues: write
-      pull-requests: write
-  
+
+permissions: {}
+
 jobs:
-  notify_jules:
-    name: Forward Bot Comments to Jules
-    if: >
-      github.event.sender.type == 'Bot' &&
-      (
-        contains(github.event.sender.login, 'coderabbit') ||
-        contains(github.event.sender.login, 'gemini')
-      ) &&
-      (
-        github.event_name != 'issue_comment' ||
-        github.event.issue.pull_request != null
-      )
+  notify-vps:
     runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      pull-requests: write
+    if: |
+      github.event.comment.author_association == 'OWNER' ||
+      github.event.comment.author_association == 'MEMBER' ||
+      github.event.comment.author_association == 'COLLABORATOR'
+
     steps:
-      - name: Parse and Forward Comment
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            // 1. Identify the sender
-            const senderLogin = context.payload.sender.login.toLowerCase();
-            const senderType = context.payload.sender.type;
-            const allowedBots = new Set([
-              'coderabbitai[bot]',
-              'gemini-code-assist[bot]'
-            ]);
+      - name: Send Webhook to VPS
+        env:
+          EVENT_JSON: ${{ toJson(github.event) }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+        run: |
+          # Write payload to a temporary file to avoid shell expansion issues
+          printf '%s' "$EVENT_JSON" > payload.json
 
-            if (senderType !== 'Bot' || !allowedBots.has(senderLogin)) {
-              console.log(`Sender ${context.payload.sender.login} is not an allowed AI bot. Skipping.`);
-              return;
-            }
+          # Generate HMAC-SHA256 signature
+          SIGNATURE=$(openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" payload.json | awk '{print $2}')
 
-            // 2. Ensure this is on a Pull Request (issue_comment triggers on standard issues too)
-            if (context.eventName === 'issue_comment' && !context.payload.issue.pull_request) {
-              console.log('This comment was on a standard issue, not a pull request. Skipping.');
-              return;
-            }
-
-            // 3. Extract the comment body, PR number, and URL based on the event type
-            let body = '';
-            let prNumber = '';
-            let commentUrl = '';
-
-            if (context.eventName === 'issue_comment') {
-              body = context.payload.comment.body;
-              prNumber = context.payload.issue.number;
-              commentUrl = context.payload.comment.html_url;
-            } else if (context.eventName === 'pull_request_review_comment') {
-              body = context.payload.comment.body;
-              prNumber = context.payload.pull_request.number;
-              commentUrl = context.payload.comment.html_url;
-            } else if (context.eventName === 'pull_request_review') {
-              body = context.payload.review.body;
-              prNumber = context.payload.pull_request.number;
-              commentUrl = context.payload.review.html_url;
-
-              // Formal reviews sometimes have no body text (just approvals/changes requested)
-              if (!body) {
-                 console.log('Review event has no text body. Skipping.');
-                 return;
-              }
-            }
-
-            if (!body) return;
-
-            // 4. Format the new comment for @jules
-            const mention = '@jules';
-            // Prefix every line with '> ' to create a markdown blockquote
-            const blockquotedBody = body.split('\n').map(line => `> ${line}`).join('\n');
-
-            const newComment = `${mention} - New AI Review from **${context.payload.sender.login}**:\n\n${blockquotedBody}\n\n[View original comment](${commentUrl})`;
-
-            // 5. Post the new comment to the PR
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: prNumber,
-              body: newComment
-            });
+          curl -X POST "$WEBHOOK_URL" \
+          -H "Content-Type: application/json" \
+          -H "X-Hub-Signature-256: sha256=$SIGNATURE" \
+          -H "X-GitHub-Event: ${{ github.event_name == 'issue_comment' && 'issue_comment' || 'pull_request_review_comment' }}" \
+          --data-binary @payload.json
