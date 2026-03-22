@@ -83,13 +83,17 @@ public class SettingsActivity extends AppCompatActivity {
             // Clean up legacy string-based app_whitelist before loading preferences
             try {
                 android.content.SharedPreferences prefs = getPreferenceManager().getSharedPreferences();
-                if (prefs.contains("app_whitelist")) {
-                    try {
-                        prefs.getStringSet("app_whitelist", null);
-                    } catch (ClassCastException e) {
-                        Log.w(TAG, "Legacy string-based app_whitelist found. Clearing it to prevent ClassCastException.");
-                        prefs.edit().remove("app_whitelist").apply();
+                if (prefs != null) {
+                    if (prefs.contains("app_whitelist")) {
+                        try {
+                            prefs.getStringSet("app_whitelist", null);
+                        } catch (ClassCastException e) {
+                            Log.w(TAG, "Legacy string-based app_whitelist found. Clearing it to prevent ClassCastException.");
+                            prefs.edit().remove("app_whitelist").apply();
+                        }
                     }
+                } else {
+                    Log.w(TAG, "SharedPreferences is null, skipping legacy cleanup.");
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Failed to clean legacy preferences", e);

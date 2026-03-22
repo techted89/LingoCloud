@@ -6,6 +6,8 @@ on:
   issue_comment:
     types: [created]
 
+permissions: {}
+
 jobs:
   notify-vps:
     runs-on: ubuntu-latest
@@ -22,9 +24,7 @@ jobs:
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
         run: |
           # Write payload to a temporary file to avoid shell expansion issues
-          cat << EOF > payload.json
-          $EVENT_JSON
-          EOF
+          printf '%s' "$EVENT_JSON" > payload.json
 
           # Generate HMAC-SHA256 signature
           SIGNATURE=$(openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" payload.json | awk '{print $2}')

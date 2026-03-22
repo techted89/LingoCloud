@@ -102,7 +102,21 @@ public class HookMain implements IXposedHookLoadPackage {
         String backupKeyKey = service.equals("Gemini") ? "gemini_api_key_backup" : "microsoft_api_key_backup";
         String apiKey = prefs.getString(apiKeyKey, "");
         String backupApiKey = prefs.getString(backupKeyKey, "");
-        Set<String> enabledApps = prefs.getStringSet("app_whitelist", new HashSet<>());
+
+        Set<String> enabledApps;
+        try {
+            enabledApps = prefs.getStringSet("app_whitelist", new HashSet<>());
+        } catch (ClassCastException e) {
+            XposedBridge.log(TAG + ": Legacy string-based app_whitelist found in HookMain. Clearing to prevent crash.");
+            String legacy = prefs.getString("app_whitelist", null);
+            if (legacy != null) {
+                enabledApps = parseWhitelist(legacy);
+            } else {
+                enabledApps = new HashSet<>();
+            }
+            prefs.edit().remove("app_whitelist").apply();
+        }
+
         String targetLanguage = prefs.getString("target_lang", "en");
 
         // 3. Dynamic Package Filtering
