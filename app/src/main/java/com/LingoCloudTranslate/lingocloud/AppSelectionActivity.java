@@ -61,14 +61,14 @@ public class AppSelectionActivity extends AppCompatActivity {
             List<AppItem> appItems = new ArrayList<>();
 
             for (ApplicationInfo appInfo : installedApps) {
-                if ((appInfo.flags & ApplicationInfo.FLAG_SYSTEM) == 0 || (appInfo.flags & ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0) {
-                    appItems.add(new AppItem(
-                        appInfo.loadLabel(pm).toString(),
-                        appInfo.packageName,
-                        appInfo.loadIcon(pm),
-                        selectedApps.contains(appInfo.packageName)
-                    ));
-                }
+                // Include all apps including system apps, as requested by the user
+                // who wants it to "include all apps and or apps selected thru the lsposed xposed"
+                appItems.add(new AppItem(
+                    appInfo.loadLabel(pm).toString(),
+                    appInfo.packageName,
+                    appInfo.loadIcon(pm),
+                    selectedApps.contains(appInfo.packageName)
+                ));
             }
 
             Collections.sort(appItems, (a, b) -> a.name.compareToIgnoreCase(b.name));
