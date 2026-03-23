@@ -48,9 +48,13 @@ public class HookMain implements IXposedHookLoadPackage {
     private static final TranslationClient client = new TranslationClient();
 
     // Memory cache to avoid repeated API calls (500 entries)
-    // Make these visible for testing
-    static LruCache<String, String> translationCache = new LruCache<>(500);
-    static final Object cacheLock = new Object();
+    private static LruCache<String, String> translationCache = new LruCache<>(500);
+    private static final Object cacheLock = new Object();
+
+    // Package-private test accessor for cache
+    static void setTranslationCacheForTests(LruCache<String, String> mockCache) {
+        translationCache = mockCache;
+    }
 
     // Thread pool for async translation (prevents UI blocking)
     private static final ExecutorService executor = Executors.newFixedThreadPool(3);
@@ -281,10 +285,8 @@ public class HookMain implements IXposedHookLoadPackage {
                         String cachedTranslation = TranslationCache.get(textStr);
                         if (cachedTranslation != null) {
                             param.args[0] = cachedTranslation;
-                            param.args[1] = 0;
-                            param.args[2] = cachedTranslation.length();
                         } else {
-                            final android.widget.TextView view = (android.widget.TextView) param.thisObject;
+                            final android.view.View view = (android.view.View) param.thisObject;
                             GeminiTranslator.translate(textStr, new TranslationCallback() {
                                 @Override
                                 public void onSuccess(final String translatedText) {
@@ -292,9 +294,9 @@ public class HookMain implements IXposedHookLoadPackage {
                                     if (view != null) {
                                         view.post(() -> {
                                             try {
-                                                view.append(translatedText);
+                                                view.setContentDescription(translatedText);
                                             } catch (Exception ex) {
-                                                XposedBridge.log(TAG + ": Async append failed: " + ex);
+                                                XposedBridge.log(TAG + ": Async setContentDescription failed: " + ex);
                                             }
                                         });
                                     }
@@ -399,8 +401,6 @@ public class HookMain implements IXposedHookLoadPackage {
                 lpparam.classLoader,
                 "append",
                 CharSequence.class,
-                int.class,
-                int.class,
                 new XC_MethodHook() {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {

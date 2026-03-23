@@ -40,7 +40,7 @@ public class AppSelectionActivity extends AppCompatActivity {
         setSupportActionBar(toolbar);
         if (getSupportActionBar() != null) {
             getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-            getSupportActionBar().setTitle("App Whitelist");
+            getSupportActionBar().setTitle(R.string.app_whitelist_title);
         }
 
         recyclerView = findViewById(R.id.recycler_view);
