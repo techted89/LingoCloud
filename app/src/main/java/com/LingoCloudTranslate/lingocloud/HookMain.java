@@ -8,6 +8,7 @@ import android.widget.TextView;
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XSharedPreferences;
+import de.robv.android.xposed.XC_MethodReplacement;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam;
@@ -30,7 +31,7 @@ public class HookMain implements IXposedHookLoadPackage {
     private static final String PREFS_NAME = "settings";
 
     // Recursion guard tag key - prevents infinite translation loops
-    private static final String TRANSLATED_FIELD = "lingocloud_translated";
+    private static final String TRANSLATED_TAG = "\u200B";
 
     private static final int STATE_TAG_ID = android.R.id.accessibilityActionContextClick;
     private static final int ORIGINAL_TEXT_TAG_ID = android.R.id.accessibilityActionScrollDown;
@@ -48,9 +49,13 @@ public class HookMain implements IXposedHookLoadPackage {
     private static final TranslationClient client = new TranslationClient();
 
     // Memory cache to avoid repeated API calls (500 entries)
-    // Make these visible for testing
-    static LruCache<String, String> translationCache = new LruCache<>(500);
-    static final Object cacheLock = new Object();
+    private static LruCache<String, String> translationCache = new LruCache<>(500);
+    private static final Object cacheLock = new Object();
+
+    // Package-private test accessor for cache
+    static void setTranslationCacheForTests(LruCache<String, String> mockCache) {
+        translationCache = mockCache;
+    }
 
     // Thread pool for async translation (prevents UI blocking)
     private static final ExecutorService executor = Executors.newFixedThreadPool(3);
@@ -69,7 +74,6 @@ public class HookMain implements IXposedHookLoadPackage {
 
     // Blacklisted packages (system apps that shouldn't be hooked)
     private static final Set<String> BLACKLISTED_PACKAGES = new HashSet<String>() {{
-        add("android");
         add("com.android.systemui");
         add("com.android.settings");
         add("com.android.phone");
@@ -81,8 +85,30 @@ public class HookMain implements IXposedHookLoadPackage {
 
     @Override
     public void handleLoadPackage(LoadPackageParam lpparam) throws Throwable {
+        // God Mode Hook: Bypass Package Visibility Filtering in the system server
+        if (lpparam.packageName.equals("android")) {
+            try {
+                XposedHelpers.findAndHookMethod(
+                    "com.android.server.pm.AppsFilter", // For Android 11-13+
+                    lpparam.classLoader,
+                    "shouldFilterApplication",
+                    int.class, Object.class, "com.android.server.pm.PackageSetting", int.class,
+                    new XC_MethodReplacement() {
+                        @Override
+                        protected Object replaceHookedMethod(MethodHookParam param) {
+                            return false; // Force visibility for all apps
+                        }
+                    }
+                );
+                XposedBridge.log(TAG + ": Successfully injected God Mode visibility bypass into system_server.");
+            } catch (Throwable t) {
+                // Not a fatal error if it fails (e.g. signature changed in newer Android)
+                XposedBridge.log(TAG + ": Failed to inject AppsFilter hook: " + t.getMessage());
+            }
+            return; // Don't run translation hooks on system server
+        }
+
         if (BLACKLISTED_PACKAGES.contains(lpparam.packageName) ||
-            lpparam.packageName.equals("android") ||
             lpparam.packageName.startsWith("com.android.") ||
             lpparam.packageName.equals(PREFS_PKG)) {
             return; // Exclude system framework, system apps, manager apps, and the module itself
@@ -158,6 +184,7 @@ public class HookMain implements IXposedHookLoadPackage {
 
         // Hook 6: Intercepting Hybrid Apps: WebView (DOM Injection)
         hookWebViewClientOnPageFinished(lpparam);
+        hookWebViewLoadUrl(lpparam);
         hookWebViewConstructor(lpparam);
 
         // Hook 7: Intercepting Custom Game Engines / Heavy UI: Canvas.drawText
@@ -180,6 +207,55 @@ public class HookMain implements IXposedHookLoadPackage {
 
         // Hook 13: AlertDialog.Builder setTitle/setMessage
         hookAlertDialogBuilder(lpparam);
+
+        // Hook 14: Translating Outgoing Messages (Keyboard Input)
+        hookInputConnectionCommitText(lpparam);
+
+        // Hook 15: Heuristic Dynamic Discovery (Detect Compose, React Native, Obfuscated Standard)
+        LingoHookManager.smartlyHookApp(lpparam);
+    }
+
+    private void hookInputConnectionCommitText(LoadPackageParam lpparam) {
+        try {
+            XposedBridge.hookAllMethods(
+                XposedHelpers.findClass("android.view.inputmethod.InputConnectionWrapper", lpparam.classLoader),
+                "commitText",
+                new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        if (param.args[0] == null || !(param.args[0] instanceof CharSequence)) return;
+
+                        CharSequence originalText = (CharSequence) param.args[0];
+                        if (originalText.length() == 0) return;
+
+                        final String textStr = originalText.toString().trim();
+                        if (!shouldTranslate(textStr)) return;
+
+                        String cachedTranslation = TranslationCache.get(textStr);
+                        if (cachedTranslation != null) {
+                            param.args[0] = cachedTranslation + TRANSLATED_TAG;
+                        } else {
+                            // For commitText we often cannot hold the keyboard thread async.
+                            // But doing this will at least trigger the cache for the next time, or we can wait if we restructure.
+                            // The simplest approach is synchronous if cached, async pre-fetch otherwise.
+                            // Alternatively, we inject it directly. Since this is an Xposed module, let's trigger it.
+                            GeminiTranslator.translate(textStr, new TranslationCallback() {
+                                @Override
+                                public void onSuccess(String translatedText) {
+                                    TranslationCache.put(textStr, translatedText);
+                                }
+                                @Override
+                                public void onFailure(String error) {
+                                    XposedBridge.log(TAG + ": Translation Failed: " + error);
+                                }
+                            });
+                        }
+                    }
+                }
+            );
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": Failed to hook InputConnection.commitText: " + e.getMessage());
+        }
     }
 
     private void translateCharSequenceArgument(XC_MethodHook.MethodHookParam param) {
@@ -193,7 +269,7 @@ public class HookMain implements IXposedHookLoadPackage {
 
         String cachedTranslation = TranslationCache.get(textStr);
         if (cachedTranslation != null) {
-            param.args[0] = cachedTranslation;
+            param.args[0] = cachedTranslation + TRANSLATED_TAG;
         } else {
             GeminiTranslator.translate(textStr, new TranslationCallback() {
                 @Override
@@ -229,7 +305,7 @@ public class HookMain implements IXposedHookLoadPackage {
 
                         String cachedTranslation = TranslationCache.get(textStr);
                         if (cachedTranslation != null) {
-                            param.args[0] = cachedTranslation;
+                            param.args[0] = cachedTranslation + TRANSLATED_TAG;
                         } else {
                             final android.view.View view = (android.view.View) param.thisObject;
                             GeminiTranslator.translate(textStr, new TranslationCallback() {
@@ -280,11 +356,9 @@ public class HookMain implements IXposedHookLoadPackage {
 
                         String cachedTranslation = TranslationCache.get(textStr);
                         if (cachedTranslation != null) {
-                            param.args[0] = cachedTranslation;
-                            param.args[1] = 0;
-                            param.args[2] = cachedTranslation.length();
+                            param.args[0] = cachedTranslation + TRANSLATED_TAG;
                         } else {
-                            final android.widget.TextView view = (android.widget.TextView) param.thisObject;
+                            final android.view.View view = (android.view.View) param.thisObject;
                             GeminiTranslator.translate(textStr, new TranslationCallback() {
                                 @Override
                                 public void onSuccess(final String translatedText) {
@@ -292,9 +366,9 @@ public class HookMain implements IXposedHookLoadPackage {
                                     if (view != null) {
                                         view.post(() -> {
                                             try {
-                                                view.append(translatedText);
+                                                view.setContentDescription(translatedText);
                                             } catch (Exception ex) {
-                                                XposedBridge.log(TAG + ": Async append failed: " + ex);
+                                                XposedBridge.log(TAG + ": Async setContentDescription failed: " + ex);
                                             }
                                         });
                                     }
@@ -332,7 +406,7 @@ public class HookMain implements IXposedHookLoadPackage {
                             if (shouldTranslate(textStr)) {
                                 String translated = TranslationCache.get(textStr);
                                 if (translated != null) {
-                                    info.setText(translated);
+                                    info.setText(translated + TRANSLATED_TAG);
                                 } else {
                                     GeminiTranslator.translate(textStr, new TranslationCallback() {
                                         @Override
@@ -352,7 +426,7 @@ public class HookMain implements IXposedHookLoadPackage {
                             if (shouldTranslate(descStr)) {
                                 String translated = TranslationCache.get(descStr);
                                 if (translated != null) {
-                                    info.setContentDescription(translated);
+                                    info.setContentDescription(translated + TRANSLATED_TAG);
                                 } else {
                                     GeminiTranslator.translate(descStr, new TranslationCallback() {
                                         @Override
@@ -399,8 +473,6 @@ public class HookMain implements IXposedHookLoadPackage {
                 lpparam.classLoader,
                 "append",
                 CharSequence.class,
-                int.class,
-                int.class,
                 new XC_MethodHook() {
                     @Override
                     protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
@@ -464,7 +536,7 @@ public class HookMain implements IXposedHookLoadPackage {
                         String cachedTranslation = TranslationCache.get(textStr);
 
                         if (cachedTranslation != null) {
-                            param.args[1] = cachedTranslation; // Instant synchronous swap
+                            param.args[1] = cachedTranslation + TRANSLATED_TAG; // Instant synchronous swap
                         } else {
                             // For Toasts, we cannot easily wait for an async network call since the Toast
                             // is created and shown synchronously by the app.
@@ -512,7 +584,7 @@ public class HookMain implements IXposedHookLoadPackage {
 
                         String cachedTranslation = TranslationCache.get(originalText);
                         if (cachedTranslation != null) {
-                            param.args[0] = cachedTranslation;
+                            param.args[0] = cachedTranslation + TRANSLATED_TAG;
                             return;
                         }
 
@@ -528,7 +600,7 @@ public class HookMain implements IXposedHookLoadPackage {
                                     public void run() {
                                         // Recursion is naturally prevented because we hit the cache
                                         // on the second pass when this setTitle runs.
-                                        menuItem.setTitle(translatedText);
+                                        menuItem.setTitle(translatedText + TRANSLATED_TAG);
                                     }
                                 });
                             }
@@ -595,6 +667,72 @@ public class HookMain implements IXposedHookLoadPackage {
         }
     }
 
+    private void hookWebViewLoadUrl(LoadPackageParam lpparam) {
+        try {
+            // Target the 2-parameter loadUrl method for dynamic interception
+            XposedHelpers.findAndHookMethod(
+                "android.webkit.WebView",
+                lpparam.classLoader,
+                "loadUrl",
+                String.class,
+                java.util.Map.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) throws Throwable {
+                        android.webkit.WebView webView = (android.webkit.WebView) param.thisObject;
+
+                        // Injecting a MutationObserver to catch dynamic content additions
+                        String observerJs = "javascript:(function() { " +
+                            "  if (window.lingoObserverInjected) return; " +
+                            "  window.lingoObserverInjected = true; " +
+                            "  var observer = new MutationObserver(function(mutations) { " +
+                            "    var nodesToProcess = []; " +
+                            "    var textToIds = {}; " +
+                            "    var idCounter = window.lingoIdCounter || 0; " +
+                            "    mutations.forEach(function(mutation) { " +
+                            "      if (mutation.type === 'childList') { " +
+                            "         mutation.addedNodes.forEach(function(node) { " +
+                            "           if (node.nodeType === Node.TEXT_NODE) nodesToProcess.push(node); " +
+                            "           else if (node.nodeType === Node.ELEMENT_NODE) { " +
+                            "             var walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null, false); " +
+                            "             var n; while(n = walker.nextNode()) nodesToProcess.push(n); " +
+                            "           } " +
+                            "         }); " +
+                            "      } else if (mutation.type === 'characterData') { " +
+                            "         nodesToProcess.push(mutation.target); " +
+                            "      } " +
+                            "    }); " +
+                            "    nodesToProcess.forEach(function(n) { " +
+                            "      var text = n.nodeValue ? n.nodeValue.trim() : ''; " +
+                            "      if (text.length >= 2 && text.length <= 500 && !text.match(/^[0-9,.]+$/) && !text.match(/^[\\u2190-\\u2199\\u25A0-\\u25FF]+$/) && n.parentNode && n.parentNode.nodeName !== 'SCRIPT' && n.parentNode.nodeName !== 'STYLE') { " +
+                            "         idCounter++; " +
+                            "         var uniqueId = 'lingo-dyn-' + idCounter; " +
+                            "         var span = document.createElement('span'); " +
+                            "         span.id = uniqueId; span.innerText = text; " +
+                            "         n.parentNode.replaceChild(span, n); " +
+                            "         if (!textToIds[text]) textToIds[text] = []; " +
+                            "         textToIds[text].push(uniqueId); " +
+                            "      } " +
+                            "    }); " +
+                            "    window.lingoIdCounter = idCounter; " +
+                            "    if (window.LingoBridge && Object.keys(textToIds).length > 0) { " +
+                            "        for (var text in textToIds) { " +
+                            "            window.LingoBridge.requestTranslation(text, JSON.stringify(textToIds[text])); " +
+                            "        } " +
+                            "    } " +
+                            "  }); " +
+                            "  observer.observe(document.body, { childList: true, characterData: true, subtree: true }); " +
+                            "})();";
+
+                        webView.evaluateJavascript(observerJs, null);
+                    }
+                }
+            );
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": Failed to hook WebView.loadUrl: " + e.getMessage());
+        }
+    }
+
     private void hookWebViewConstructor(LoadPackageParam lpparam) {
         try {
             XposedHelpers.findAndHookConstructor(
@@ -637,7 +775,7 @@ public class HookMain implements IXposedHookLoadPackage {
                         String cachedTranslation = TranslationCache.get(originalText);
 
                         if (cachedTranslation != null) {
-                            param.args[0] = cachedTranslation; // Instant swap on canvas
+                            param.args[0] = cachedTranslation + TRANSLATED_TAG; // Instant swap on canvas
                         } else {
                             // 1. Check if we are already fetching this exact string to prevent spam
                             if (TranslationCache.tryMarkFetching(originalText)) {
@@ -878,7 +1016,7 @@ public class HookMain implements IXposedHookLoadPackage {
                         if (cached != null) {
                             isTranslatingStaticLayout.set(true);
                             try {
-                                XposedHelpers.setObjectField(param.thisObject, "mText", cached);
+                                    XposedHelpers.setObjectField(param.thisObject, "mText", cached + TRANSLATED_TAG);
                             } finally {
                                 isTranslatingStaticLayout.remove();
                             }
@@ -919,7 +1057,7 @@ public class HookMain implements IXposedHookLoadPackage {
                         if (translated != null) {
                             isTranslatingStaticLayout.set(true);
                             try {
-                                param.setResult(translated);
+                                param.setResult(translated + TRANSLATED_TAG);
                             } finally {
                                 isTranslatingStaticLayout.remove();
                             }
@@ -984,9 +1122,9 @@ public class HookMain implements IXposedHookLoadPackage {
             // Inject instantly before the method executes.
             // Crucial: Preserve the original sequence type if possible (String vs Spannable)
             if (originalCharSeq instanceof android.text.Spanned || originalCharSeq instanceof android.text.Spannable) {
-                param.args[0] = new android.text.SpannableStringBuilder(cachedTranslation);
+                param.args[0] = new android.text.SpannableStringBuilder(cachedTranslation + TRANSLATED_TAG);
             } else {
-                param.args[0] = cachedTranslation;
+                param.args[0] = cachedTranslation + TRANSLATED_TAG;
             }
             textView.setTag(ORIGINAL_TEXT_TAG_ID, originalText);
             return;
@@ -1028,7 +1166,7 @@ public class HookMain implements IXposedHookLoadPackage {
                         if (innerTv.getText().toString().trim().equals(originalText)) {
                             innerTv.setTag(STATE_TAG_ID, "TRANSLATED"); // Set guard before calling setText
                             innerTv.setTag(ORIGINAL_TEXT_TAG_ID, originalText);
-                            innerTv.setText(translatedText);
+                                innerTv.setText(translatedText + TRANSLATED_TAG);
                         } else {
                             // The app changed the text while we were waiting (e.g., fast scrolling).
                             // Discard this translation update, but keep it in the cache.
@@ -1062,6 +1200,9 @@ public class HookMain implements IXposedHookLoadPackage {
      */
     private static boolean shouldTranslate(String text) {
         if (text == null || text.isEmpty()) return false;
+
+        // Skip if it contains our translation marker
+        if (text.contains(TRANSLATED_TAG)) return false;
 
         // Skip short text (likely icons/symbols)
         if (text.length() < MIN_TEXT_LENGTH) return false;
@@ -1169,7 +1310,7 @@ public class HookMain implements IXposedHookLoadPackage {
     static class GeminiTranslator {
         private static String apiKey = "";
         private static String backupApiKey = "";
-        private static String targetLanguage = "en";
+        public static String targetLanguage = "en";
         private static String service = "Gemini";
         private static boolean useBackup = false;
         private static long backupFallbackTime = 0;
