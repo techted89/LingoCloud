@@ -108,20 +108,8 @@ public class TranslationClient implements AutoCloseable {
     }
 
     /**
-     * Translate UI text using the Google Gemini (GenAI) SDK and deliver the result via the provided callback.
-     *
-     * This method submits a translation task to an internal background executor, constructs a rule-based
-     * prompt that instructs the model to preserve formatting/emoji and to return only the translated string,
-     * and invokes the Gemini model "gemini-2.5-flash". The SDK client is cached per `apiKey` and rebuilt when the
-     * key changes.
-     *
-     * @param text the input text to translate (may be mixed-language)
-     * @param apiKey the API key used to initialize the GenAI SDK client
-     * @param targetLang the target language code/name to translate into
-     * @param callback receiver for the translated text; delivered values:
-     *                 - trimmed translated string on success,
-     *                 - "ERROR_LIMIT_EXCEEDED" if a rate-limit (429) is detected,
-     *                 - `null` on other failures
+     * Google GenAI API Call
+     * Uses the official GenAI SDK to replace legacy REST API
      */
     private void callGemini(@NonNull String text, @NonNull String apiKey,
                            @NonNull String targetLang, @NonNull TranslationCallback callback) {

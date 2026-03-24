@@ -225,11 +225,6 @@ public class SettingsActivity extends AppCompatActivity {
             }
         }
 
-        /**
-         * Configures the "target_lang" DropDownPreference to show a toast with the selected language's display name when changed.
-         *
-         * The listener accepts the new value so the preference is persisted.
-         */
         private void setupTargetLanguage() {
             DropDownPreference targetLang = findPreference("target_lang");
             if (targetLang != null) {
@@ -243,11 +238,6 @@ public class SettingsActivity extends AppCompatActivity {
             }
         }
 
-        /**
-         * Attaches a click handler to the "app_whitelist" preference that launches AppSelectionActivity.
-         *
-         * If the preference is not present in the preference hierarchy, the method does nothing.
-         */
         private void setupAppWhitelist() {
             Preference whitelistPref = findPreference("app_whitelist");
             if (whitelistPref != null) {
@@ -259,25 +249,12 @@ public class SettingsActivity extends AppCompatActivity {
             }
         }
 
-        /**
-         * Refreshes the app whitelist preference summary when the fragment resumes.
-         *
-         * Updates the displayed summary to reflect the currently selected apps.
-         */
         @Override
         public void onResume() {
             super.onResume();
             updateAppWhitelistSummary();
         }
 
-        /**
-         * Update the "app_whitelist" preference summary to reflect the current selection.
-         *
-         * Reads the string-set stored under key "app_whitelist" in the app's PREF_FILE shared
-         * preferences and sets the preference summary to either a no-selection message when the
-         * set is missing or empty, or to "<N> apps selected" when one or more packages are present.
-         * If the preference is not found, the method does nothing.
-         */
         private void updateAppWhitelistSummary() {
             Preference whitelistPref = findPreference("app_whitelist");
             if (whitelistPref != null) {
@@ -292,11 +269,6 @@ public class SettingsActivity extends AppCompatActivity {
             }
         }
 
-        /**
-         * Wires the "test_connection" preference to initiate an API connection test when clicked.
-         *
-         * If the preference is present, sets a click listener that calls testApiConnection(); does nothing if the preference is missing.
-         */
         private void setupTestConnection() {
             Preference testPref = findPreference("test_connection");
             if (testPref != null) {
@@ -307,15 +279,6 @@ public class SettingsActivity extends AppCompatActivity {
             }
         }
 
-        /**
-         * Tests the configured translation service by reading the selected service provider,
-         * the corresponding API key, and the target language from the app's settings and attempting
-         * to translate a short test string.
-         *
-         * If no API key is configured for the selected provider, displays a toast requesting the key
-         * and aborts. Otherwise shows a "testing" toast, performs the translation, and displays a toast
-         * with the translated text on success or a failure message asking to check the API key.
-         */
         private void testApiConnection() {
             android.content.SharedPreferences prefs = requireContext().getSharedPreferences(PREF_FILE, android.content.Context.MODE_PRIVATE);
             String service = prefs.getString("service_provider", "Gemini");
