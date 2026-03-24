@@ -1,6 +1,18 @@
 package com.LingoCloudTranslate.lingocloud;
 
 public class PayloadValidator {
+    /**
+     * Decides whether a given text payload should be translated.
+     *
+     * The method rejects null or very short inputs, strings that contain the translation marker,
+     * strings that look like URLs or file/content paths, and strings that appear to be whole
+     * JSON or XML snippets. For other inputs, it uses Unicode/character analysis relative to
+     * the specified target language to determine whether translation is necessary.
+     *
+     * @param originalText the text to evaluate for translation eligibility
+     * @param userTargetLang the target language code used to assess whether translation is needed
+     * @return `true` if the text should be translated, `false` otherwise
+     */
     public static boolean textShouldTranslate(CharSequence originalText, String userTargetLang) {
         if (originalText == null || originalText.length() < 2) return false;
 

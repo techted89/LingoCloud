@@ -8,6 +8,15 @@ public class HookOrchestrator {
     // ThreadLocal ensures thread-safety across the target app's UI rendering pipeline
     private static final ThreadLocal<Boolean> isCurrentlyTranslating = ThreadLocal.withInitial(() -> false);
 
+    /**
+     * Intercepts a hooked method's text argument and, if eligible, replaces it with a cached translation or requests a translation asynchronously.
+     *
+     * <p>The method is guarded against re-entrancy via a thread-local flag. It only processes a non-null CharSequence argument at the specified index that passes the payload validator. If a cached translation is available the hook argument is replaced with the translated text plus LingoHookManager.TRANSLATED_TAG. If no cached translation exists, the method either broadcasts an ACTION_REQUEST_TRANSLATION intent (when a Context is provided) including `text`, `package`, and optional `viewId`, or invokes the translator directly and stores the result in the translation cache when Context is unavailable.</p>
+     *
+     * @param param    the Xposed MethodHookParam whose argument may be inspected and modified
+     * @param context  Android Context used for IPC/broadcast; may be null (in which case a direct translator fallback is used)
+     * @param argIndex index of the argument within param.args to inspect and possibly replace
+     */
     public static void executeTextHook(MethodHookParam param, Context context, int argIndex) {
         if (isCurrentlyTranslating.get()) return; // Prevent recursive loops
         if (param.args == null || param.args.length <= argIndex || param.args[argIndex] == null) return;

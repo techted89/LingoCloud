@@ -6,6 +6,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class HeuristicScanner {
+    /**
+     * Finds candidate "text setter" methods on the given class using simple heuristics.
+     *
+     * <p>Heuristics: the method must declare exactly one parameter (compatible with
+     * `CharSequence` or `String`), the declaring class must be a subclass of
+     * `android.view.View` or `android.view.accessibility.AccessibilityNodeInfo`, and
+     * both the class and method names must not match common logging/builder/buffer or
+     * print/write/append patterns.</p>
+     *
+     * @param targetClass the class to scan for candidate text-setting methods
+     * @return a list of reflected `Method` instances that match the heuristics for text setters
+     */
     public static List<Method> findTextSetters(Class<?> targetClass) {
         List<Method> validHooks = new ArrayList<>();
         Method[] methods = targetClass.getDeclaredMethods();

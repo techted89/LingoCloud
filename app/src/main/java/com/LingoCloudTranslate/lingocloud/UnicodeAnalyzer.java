@@ -17,10 +17,17 @@ public class UnicodeAnalyzer {
     private static final Pattern BLOCK_ARABIC = Pattern.compile("^[\\p{IsArabic}]+$");
 
     /**
-     * Analyzes if the text contains characters foreign to the target language.
-     * @param text The raw text from the UI hook.
-     * @param targetLanguageCode The user's selected language (e.g., "en", "ru", "zh").
-     * @return true if foreign characters are detected, requiring translation.
+     * Determines whether UI text contains characters outside the expected Unicode script for a target language.
+     *
+     * <p>The method first removes "universal" characters (digits, whitespace, punctuation, symbol and certain emoji ranges)
+     * before checking whether the remaining characters belong entirely to the target language's primary Unicode block.
+     * If the stripped text is empty, the method returns `false`. If `targetLanguageCode` is `null` or not recognized, the
+     * method returns `true`.</p>
+     *
+     * @param text the raw UI text to analyze; universal characters (digits, whitespace, punctuation, symbols, some emoji) are ignored
+     * @param targetLanguageCode the target language code (case-insensitive). Supported codes: "en", "es", "fr", "de", "it", "pt" (Latin),
+     *                           "ru" (Cyrillic), "zh","ja","ko" (CJK/Han/Hiragana/Katakana/Hangul), and "ar" (Arabic)
+     * @return `true` if one or more characters outside the target language's primary Unicode script remain after stripping universal characters, `false` otherwise
      */
     public static boolean requiresTranslation(String text, String targetLanguageCode) {
         // 1. Strip all universal characters (emojis, numbers, spaces, punctuation)

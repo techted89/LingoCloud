@@ -40,6 +40,17 @@ public class TranslationBridge {
         this.mainHandler = handler;
     }
 
+    /**
+     * Requests a translation for a source string and ensures the resulting text is injected into the specified DOM nodes.
+     *
+     * Ignores null or blank `originalText`. Uses an internal cache and deduplicates concurrent requests for the same source
+     * text so a single translation call services all pending DOM node lists; successful translations are stored in the
+     * cache and then injected into each supplied node list. On translation failure the in-flight state is cleared and the
+     * failure is logged without injecting text.
+     *
+     * @param originalText   the source text to translate
+     * @param domNodeIdsJson a JSON string representing an array of DOM element IDs whose `innerText` should be set to the translated text
+     */
     @JavascriptInterface
     public void requestTranslation(final String originalText, final String domNodeIdsJson) {
         if (originalText == null || originalText.trim().isEmpty()) return;
@@ -92,6 +103,12 @@ public class TranslationBridge {
         });
     }
 
+    /**
+     * Produce a JSON string literal safe for embedding into Java/JavaScript source by quoting and escaping characters that must be escaped.
+     *
+     * @param input the raw string to escape; may be null
+     * @return `"null"` if {@code input} is null, otherwise the input wrapped in double quotes with characters escaped per JSON string literal rules
+     */
     private String escapeJsonString(String input) {
         if (input == null) return "null";
         StringBuilder sb = new StringBuilder(input.length() + 16);
@@ -120,6 +137,18 @@ public class TranslationBridge {
         return sb.toString();
     }
 
+    /**
+     * Injects the given translated text into DOM elements whose IDs are listed in the provided JSON array,
+     * by executing a short JavaScript snippet in the associated WebView.
+     *
+     * The method safely serializes `domNodeIdsJson` and `translatedText` for embedding in the JS call, falling
+     * back to a manual escaping routine if JSONObject quoting is unavailable. The JavaScript sets `innerText`
+     * of each element identified by the parsed array and logs JS-side errors to the console. The injection
+     * is posted to the configured main handler when available; otherwise it runs on the current thread.
+     *
+     * @param domNodeIdsJson  a JSON array string containing the DOM element IDs to update (e.g. `["id1","id2"]`)
+     * @param translatedText  the text to assign to each element's `innerText`
+     */
     private void injectTranslationBackToDOM(final String domNodeIdsJson, final String translatedText) {
         Runnable runnable = new Runnable() {
             @Override
