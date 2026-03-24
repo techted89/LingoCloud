@@ -81,11 +81,10 @@
         android:title="App Configuration"
         app:iconSpaceReserved="false">
 
-        <MultiSelectListPreference
+        <Preference
             android:key="app_whitelist"
             android:title="App Whitelist"
             android:summary="Select apps to translate"
-            android:dialogTitle="Select Apps"
             app:iconSpaceReserved="false" />
 
     </PreferenceCategory>
