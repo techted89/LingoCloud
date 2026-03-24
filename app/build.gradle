@@ -36,6 +36,11 @@ android {
         // Required for android.util.Log usage in TranslationClient unit tests.
         unitTests.returnDefaultValues = true
     }
+
+    lint {
+        baseline = file("lint-baseline.xml")
+        abortOnError true // Keep this true to ensure new errors fail the build
+    }
 }
 
 dependencies {

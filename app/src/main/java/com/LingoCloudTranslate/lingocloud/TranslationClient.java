@@ -115,11 +115,14 @@ public class TranslationClient implements AutoCloseable {
                            @NonNull String targetLang, @NonNull TranslationCallback callback) {
 
         // Construct prompt for UI translation
-        String prompt = String.format(
-            "Translate the following UI text to %s. " +
-            "Return ONLY the translated text without quotes, explanations, or formatting: %s",
-            targetLang, text
-        );
+        String prompt = "You are a translation engine.\n" +
+            "Target language: " + targetLang + ".\n" +
+            "Rules:\n" +
+            "1. If the text is fully in the target language, return it exactly as is.\n" +
+            "2. If the text is mixed, translate ONLY the foreign parts into the target language. Keep the original target language parts intact.\n" +
+            "3. Maintain original punctuation, spacing, and emojis.\n" +
+            "4. Do not add any conversational filler. Reply ONLY with the translated string.\n" +
+            "Text to process: " + text;
 
         executor.execute(() -> {
             try {

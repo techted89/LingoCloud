@@ -6,7 +6,20 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Required on Android 11+ to list installed apps in the whitelist UI
+         This app is an Xposed module designed to hook into arbitrary apps on the system, thus requiring package visibility. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <permission android:name="com.LingoCloudTranslate.lingocloud.permission.IPC" android:protectionLevel="signature" />
+    <uses-permission android:name="com.LingoCloudTranslate.lingocloud.permission.IPC" />
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
 
     <application
         android:allowBackup="true"
@@ -45,12 +58,24 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".AppSelectionActivity"
+            android:exported="false"
+            android:label="@string/app_whitelist_title" />
+
         <!-- Translation Foreground Service -->
         <service
             android:name=".TranslationServer"
             android:foregroundServiceType="dataSync"
             android:exported="false"
             android:enabled="true" />
+
+        <!-- High-Speed IPC ContentProvider -->
+        <provider
+            android:name=".TranslationProvider"
+            android:authorities="com.LingoCloudTranslate.lingocloud.provider"
+            android:exported="true"
+            android:permission="com.LingoCloudTranslate.lingocloud.permission.IPC" />
 
     </application>
 </manifest>
