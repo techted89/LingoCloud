@@ -47,6 +47,7 @@ public class TranslationBridge {
         // 1. Check Cache
         String cachedTranslation = HookMain.TranslationCache.get(originalText);
         if (cachedTranslation != null) {
+            // Note: zero-width space trick (TRANSLATED_TAG) could be used here but the JS observer logic avoids loops natively via `window.lingoInjected` or separate state tracking
             injectTranslationBackToDOM(domNodeIdsJson, cachedTranslation);
             return;
         }

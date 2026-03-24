@@ -30,7 +30,7 @@ public class HookMain implements IXposedHookLoadPackage {
     private static final String PREFS_NAME = "settings";
 
     // Recursion guard tag key - prevents infinite translation loops
-    private static final String TRANSLATED_FIELD = "lingocloud_translated";
+    public static final String TRANSLATED_TAG = "\u200B";
 
     private static final int STATE_TAG_ID = android.R.id.accessibilityActionContextClick;
     private static final int ORIGINAL_TEXT_TAG_ID = android.R.id.accessibilityActionScrollDown;
@@ -184,6 +184,12 @@ public class HookMain implements IXposedHookLoadPackage {
 
         // Hook 13: AlertDialog.Builder setTitle/setMessage
         hookAlertDialogBuilder(lpparam);
+
+        // Hook 14: Translating Outgoing Messages (Keyboard Input)
+        hookInputConnectionCommitText(lpparam);
+
+        // Hook 15: Heuristic Dynamic Discovery (Detect Compose, React Native, Obfuscated Standard)
+        LingoHookManager.smartlyHookApp(lpparam);
     }
 
     private void translateCharSequenceArgument(XC_MethodHook.MethodHookParam param) {
@@ -410,6 +416,49 @@ public class HookMain implements IXposedHookLoadPackage {
             );
         } catch (Exception e) {
             XposedBridge.log(TAG + ": Failed to hook TextView.append: " + e.getMessage());
+        }
+    }
+
+    private void hookInputConnectionCommitText(LoadPackageParam lpparam) {
+        try {
+            XposedBridge.hookAllMethods(
+                XposedHelpers.findClass("android.view.inputmethod.InputConnectionWrapper", lpparam.classLoader),
+                "commitText",
+                new XC_MethodHook() {
+                    @Override
+                    protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
+                        if (param.args[0] == null || !(param.args[0] instanceof CharSequence)) return;
+
+                        CharSequence originalText = (CharSequence) param.args[0];
+                        if (originalText.length() == 0) return;
+
+                        final String textStr = originalText.toString().trim();
+                        if (!shouldTranslate(textStr)) return;
+
+                        String cachedTranslation = TranslationCache.get(textStr);
+                        if (cachedTranslation != null) {
+                            param.args[0] = cachedTranslation + TRANSLATED_TAG;
+                        } else {
+                            // For commitText we often cannot hold the keyboard thread async.
+                            // But doing this will at least trigger the cache for the next time, or we can wait if we restructure.
+                            // The simplest approach is synchronous if cached, async pre-fetch otherwise.
+                            // Alternatively, we inject it directly. Since this is an Xposed module, let's trigger it.
+                            GeminiTranslator.translate(textStr, new TranslationCallback() {
+                                @Override
+                                public void onSuccess(String translatedText) {
+                                    TranslationCache.put(textStr, translatedText);
+                                }
+                                @Override
+                                public void onFailure(String error) {
+                                    XposedBridge.log(TAG + ": Translation Failed: " + error);
+                                }
+                            });
+                        }
+                    }
+                }
+            );
+        } catch (Exception e) {
+            XposedBridge.log(TAG + ": Failed to hook InputConnection.commitText: " + e.getMessage());
         }
     }
 
@@ -1169,7 +1218,7 @@ public class HookMain implements IXposedHookLoadPackage {
     static class GeminiTranslator {
         private static String apiKey = "";
         private static String backupApiKey = "";
-        private static String targetLanguage = "en";
+        public static String targetLanguage = "en";
         private static String service = "Gemini";
         private static boolean useBackup = false;
         private static long backupFallbackTime = 0;

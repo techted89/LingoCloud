@@ -11,6 +11,16 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <permission android:name="com.LingoCloudTranslate.lingocloud.permission.IPC" android:protectionLevel="signature" />
+    <uses-permission android:name="com.LingoCloudTranslate.lingocloud.permission.IPC" />
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:label="@string/app_name"
@@ -59,6 +69,13 @@
             android:foregroundServiceType="dataSync"
             android:exported="false"
             android:enabled="true" />
+
+        <!-- High-Speed IPC ContentProvider -->
+        <provider
+            android:name=".TranslationProvider"
+            android:authorities="com.LingoCloudTranslate.lingocloud.provider"
+            android:exported="true"
+            android:permission="com.LingoCloudTranslate.lingocloud.permission.IPC" />
 
     </application>
 </manifest>
