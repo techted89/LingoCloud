@@ -135,12 +135,14 @@ public class AppSelectionActivity extends AppCompatActivity {
             return new ViewHolder(view);
         }
 
-        @Override
-        public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+        `@Override`
+        public void onBindViewHolder(`@NonNull` ViewHolder holder, int position) {
             AppItem app = apps.get(position);
             holder.appName.setText(app.name);
             holder.appPackage.setText(app.packageName);
             holder.appIcon.setImageDrawable(app.icon);
+            holder.checkBox.setClickable(false);
+            holder.checkBox.setFocusable(false);
             holder.checkBox.setChecked(app.isSelected);
 
             holder.itemView.setOnClickListener(v -> {
