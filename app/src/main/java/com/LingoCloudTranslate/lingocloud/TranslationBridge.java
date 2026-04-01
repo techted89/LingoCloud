@@ -30,7 +30,7 @@ public class TranslationBridge {
                 }
             }
         };
-        try { this.mainHandler = new Handler(Looper.getMainLooper()); } catch (RuntimeException e) { this.mainHandler = new Handler(); }
+        this.mainHandler = new Handler(Looper.getMainLooper());
     }
 
     // Constructor visible for testing
