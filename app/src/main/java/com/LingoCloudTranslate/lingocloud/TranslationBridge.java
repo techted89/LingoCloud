@@ -47,6 +47,7 @@ public class TranslationBridge {
         // 1. Check Cache
         String cachedTranslation = HookMain.TranslationCache.get(originalText);
         if (cachedTranslation != null) {
+            // Note: zero-width space trick (TRANSLATED_TAG) could be used here but the JS observer logic avoids loops natively via `window.lingoInjected` or separate state tracking
             injectTranslationBackToDOM(domNodeIdsJson, cachedTranslation);
             return;
         }
@@ -91,13 +92,48 @@ public class TranslationBridge {
         });
     }
 
+    private String escapeJsonString(String input) {
+        if (input == null) return "null";
+        StringBuilder sb = new StringBuilder(input.length() + 16);
+        sb.append('"');
+        for (int i = 0; i < input.length(); i++) {
+            char c = input.charAt(i);
+            switch (c) {
+                case '\\': sb.append("\\\\"); break;
+                case '"': sb.append("\\\""); break;
+                case '\b': sb.append("\\b"); break;
+                case '\f': sb.append("\\f"); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                case '/': sb.append("\\/"); break;
+                default:
+                    if (c < ' ' || (c >= '\u0080' && c < '\u00a0') || (c >= '\u2000' && c < '\u2100')) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                    break;
+            }
+        }
+        sb.append('"');
+        return sb.toString();
+    }
+
     private void injectTranslationBackToDOM(final String domNodeIdsJson, final String translatedText) {
         Runnable runnable = new Runnable() {
             @Override
             public void run() {
                 try {
-                    String safeText = JSONObject.quote(translatedText);
-                    String safeIds = JSONObject.quote(domNodeIdsJson);
+                    String safeText;
+                    String safeIds;
+                    try {
+                        safeText = JSONObject.quote(translatedText);
+                        safeIds = JSONObject.quote(domNodeIdsJson);
+                    } catch (Exception | Error e) { // Fallback for testing where JSONObject might not be available
+                         safeText = escapeJsonString(translatedText);
+                         safeIds = escapeJsonString(domNodeIdsJson);
+                    }
 
                     // Construct JS to update the specific nodes by array
                     String jsUpdate = "javascript:(function(idsJsonStr, text) { " +
