@@ -89,7 +89,27 @@ public class AppSelectionActivity extends AppCompatActivity {
             selectedApps.remove(appItem.packageName);
         }
 
-        prefs.edit().putStringSet("app_whitelist", selectedApps).apply();
+        if (prefs.edit().putStringSet("app_whitelist", selectedApps).commit()) {
+            setPrefsWorldReadable();
+        }
+    }
+
+    @android.annotation.SuppressLint("SetWorldReadable")
+    private void setPrefsWorldReadable() {
+        try {
+            java.io.File prefsDir = new java.io.File(getApplicationInfo().dataDir, "shared_prefs");
+            java.io.File prefsFile = new java.io.File(prefsDir, "settings.xml");
+            if (prefsDir.exists()) {
+                prefsDir.setExecutable(true, false);
+                prefsDir.setReadable(true, false);
+            }
+            if (prefsFile.exists()) {
+                prefsFile.setReadable(true, false);
+                prefsFile.setExecutable(true, false);
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
     }
 
     @Override
@@ -141,8 +161,6 @@ public class AppSelectionActivity extends AppCompatActivity {
             holder.appName.setText(app.name);
             holder.appPackage.setText(app.packageName);
             holder.appIcon.setImageDrawable(app.icon);
-            holder.checkBox.setClickable(false);
-            holder.checkBox.setFocusable(false);
             holder.checkBox.setChecked(app.isSelected);
 
             holder.itemView.setOnClickListener(v -> {

@@ -20,14 +20,14 @@ public class TranslationProvider extends ContentProvider {
 
     @Override
     public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs, String sortOrder) {
-        if (selectionArgs == null || selectionArgs.length < 2) return null;
+        MatrixCursor cursor = new MatrixCursor(new String[]{"original", "translated"});
+        if (selectionArgs == null || selectionArgs.length < 2) return cursor;
         String originalText = selectionArgs[0];
         String targetLang = selectionArgs[1];
         String cacheKey = originalText + "_" + targetLang;
 
         String translated = memoryCache.get(cacheKey);
 
-        MatrixCursor cursor = new MatrixCursor(new String[]{"original", "translated"});
         if (translated != null) {
             cursor.addRow(new Object[]{originalText, translated});
         }
@@ -43,10 +43,9 @@ public class TranslationProvider extends ContentProvider {
 
         if (originalText != null && translated != null && targetLang != null) {
             memoryCache.put(originalText + "_" + targetLang, translated);
-        }
-
-        if (getContext() != null) {
-            getContext().getContentResolver().notifyChange(uri, null);
+            if (getContext() != null) {
+                getContext().getContentResolver().notifyChange(uri, null);
+            }
         }
         return uri;
     }

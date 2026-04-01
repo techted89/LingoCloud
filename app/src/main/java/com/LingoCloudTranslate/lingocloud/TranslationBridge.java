@@ -30,7 +30,7 @@ public class TranslationBridge {
                 }
             }
         };
-        try { this.mainHandler = new Handler(Looper.getMainLooper()); } catch (Exception e) { this.mainHandler = new Handler(); } catch (Error e) { this.mainHandler = null; }
+        try { this.mainHandler = new Handler(Looper.getMainLooper()); } catch (RuntimeException e) { this.mainHandler = new Handler(); }
     }
 
     // Constructor visible for testing
@@ -107,6 +107,8 @@ public class TranslationBridge {
                 case '\r': sb.append("\\r"); break;
                 case '\t': sb.append("\\t"); break;
                 case '/': sb.append("\\/"); break;
+                case '\u2028': sb.append("\\u2028"); break;
+                case '\u2029': sb.append("\\u2029"); break;
                 default:
                     if (c < ' ' || (c >= '\u0080' && c < '\u00a0') || (c >= '\u2000' && c < '\u2100')) {
                         sb.append(String.format("\\u%04x", (int) c));
