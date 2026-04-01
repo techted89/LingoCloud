@@ -1218,10 +1218,14 @@ public class HookMain implements IXposedHookLoadPackage {
     static class GeminiTranslator {
         private static String apiKey = "";
         private static String backupApiKey = "";
-        public static String targetLanguage = "en";
+        private static String targetLanguage = "en";
         private static String service = "Gemini";
         private static boolean useBackup = false;
         private static long backupFallbackTime = 0;
+
+        public static String getTargetLanguage() {
+            return targetLanguage;
+        }
 
         public static void setConfiguration(String svc, String key, String backupKey, String lang) {
             service = svc;

@@ -30,7 +30,7 @@ public class TranslationBridge {
                 }
             }
         };
-        try { this.mainHandler = new Handler(Looper.getMainLooper()); } catch (Exception e) { this.mainHandler = new Handler(); } catch (Error e) { this.mainHandler = null; }
+        this.mainHandler = new Handler(Looper.getMainLooper());
     }
 
     // Constructor visible for testing
@@ -107,6 +107,8 @@ public class TranslationBridge {
                 case '\r': sb.append("\\r"); break;
                 case '\t': sb.append("\\t"); break;
                 case '/': sb.append("\\/"); break;
+                case '\u2028': sb.append("\\u2028"); break;
+                case '\u2029': sb.append("\\u2029"); break;
                 default:
                     if (c < ' ' || (c >= '\u0080' && c < '\u00a0') || (c >= '\u2000' && c < '\u2100')) {
                         sb.append(String.format("\\u%04x", (int) c));
@@ -130,7 +132,7 @@ public class TranslationBridge {
                     try {
                         safeText = JSONObject.quote(translatedText);
                         safeIds = JSONObject.quote(domNodeIdsJson);
-                    } catch (Exception | Error e) { // Fallback for testing where JSONObject might not be available
+                    } catch (Exception | LinkageError e) { // Fallback for missing/broken JSON classes in tests
                          safeText = escapeJsonString(translatedText);
                          safeIds = escapeJsonString(domNodeIdsJson);
                     }
