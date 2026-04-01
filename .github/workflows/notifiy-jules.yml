@@ -1,5 +1,5 @@
 name: Jules AI Automation Trigger
-
+    
 on:
   pull_request_review_comment:
     types: [created]
@@ -17,6 +17,9 @@ jobs:
       github.event.comment.author_association == 'COLLABORATOR'
 
     steps:
+      - name: gpt-review
+        uses: microsoft/gpt-review@v0.9.5
+   
       - name: Send Webhook to VPS
         env:
           EVENT_JSON: ${{ toJson(github.event) }}
