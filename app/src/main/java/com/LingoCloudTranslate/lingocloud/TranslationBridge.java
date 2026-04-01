@@ -132,7 +132,7 @@ public class TranslationBridge {
                     try {
                         safeText = JSONObject.quote(translatedText);
                         safeIds = JSONObject.quote(domNodeIdsJson);
-                    } catch (Exception | Error e) { // Fallback for testing where JSONObject might not be available
+                    } catch (Exception | LinkageError e) { // Fallback for missing/broken JSON classes in tests
                          safeText = escapeJsonString(translatedText);
                          safeIds = escapeJsonString(domNodeIdsJson);
                     }
