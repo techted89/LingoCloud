@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Required Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -8,7 +9,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Required on Android 11+ to list installed apps in the whitelist UI
          This app is an Xposed module designed to hook into arbitrary apps on the system, thus requiring package visibility. -->
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <permission android:name="com.LingoCloudTranslate.lingocloud.permission.IPC" android:protectionLevel="signature" />

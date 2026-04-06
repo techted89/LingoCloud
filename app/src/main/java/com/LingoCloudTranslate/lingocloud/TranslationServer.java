@@ -27,7 +27,6 @@ public class TranslationServer extends Service {
     private static final String TAG = "LingoCloud";
     private static final String CHANNEL_ID = "lingocloud_service";
     private static final int NOTIFICATION_ID = 18181;
-    private static final int LOCAL_PORT = 18181;
 
     private final IBinder binder = new LocalBinder();
     private boolean isRunning = false;
@@ -65,9 +64,6 @@ public class TranslationServer extends Service {
             // Android 12+ throws ForegroundServiceStartNotAllowedException
         }
 
-        // TODO: Start local HTTP server if implementing client-server architecture
-        // startLocalServer();
-
         return START_STICKY;
     }
 
@@ -82,8 +78,6 @@ public class TranslationServer extends Service {
         super.onDestroy();
         Log.d(TAG, "TranslationServer destroyed");
         isRunning = false;
-        // TODO: Stop local HTTP server
-        // stopLocalServer();
     }
 
     public boolean isRunning() {
@@ -130,66 +124,4 @@ public class TranslationServer extends Service {
             .build();
     }
 
-    /**
-     * Update notification text
-     */
-    private void updateNotification(String text) {
-        NotificationManager manager = getSystemService(NotificationManager.class);
-        if (manager != null) {
-            Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("LingoCloud Translator")
-                .setContentText(text)
-                .setSmallIcon(R.drawable.ic_menu_translate)
-                .setOngoing(true)
-                .setSilent(true)
-                .build();
-            manager.notify(NOTIFICATION_ID, notification);
-        }
-    }
-
-    /*
-     * Local HTTP Server Implementation (Optional Extension)
-     *
-     * Uncomment and implement if you want a true client-server architecture
-     * where hooked apps communicate via HTTP to localhost:18181
-     *
-     * private NanoHTTPD server;
-     *
-     * private void startLocalServer() {
-     *     try {
-     *         server = new TranslationHttpServer(LOCAL_PORT);
-     *         server.start();
-     *         Log.d(TAG, "Local translation server started on port " + LOCAL_PORT);
-     *     } catch (IOException e) {
-     *         Log.e(TAG, "Failed to start local server", e);
-     *     }
-     * }
-     *
-     * private void stopLocalServer() {
-     *     if (server != null) {
-     *         server.stop();
-     *         Log.d(TAG, "Local translation server stopped");
-     *     }
-     * }
-     *
-     * private static class TranslationHttpServer extends NanoHTTPD {
-     *     TranslationHttpServer(int port) {
-     *         super(port);
-     *     }
-     *
-     *     @Override
-     *     public Response serve(IHTTPSession session) {
-     *         String uri = session.getUri();
-     *         if ("/translate".equals(uri)) {
-     *             Map<String, String> params = session.getParms();
-     *             String text = params.get("q");
-     *             // Process translation...
-     *             return newFixedLengthResponse(Response.Status.OK,
-     *                 "application/json", "{\"result\":\"translated\"}");
-     *         }
-     *         return newFixedLengthResponse(Response.Status.NOT_FOUND,
-     *             "text/plain", "Not Found");
-     *     }
-     * }
-     */
 }

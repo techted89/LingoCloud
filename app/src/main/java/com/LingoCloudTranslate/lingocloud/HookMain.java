@@ -44,10 +44,10 @@ public class HookMain implements IXposedHookLoadPackage {
     // Shared preferences for cross-process settings access
     private static XSharedPreferences prefs;
 
-    // HTTP client for translation API calls
+    // HTTP client for executing network requests to external Translation APIs (Gemini/Microsoft)
     private static final TranslationClient client = new TranslationClient();
 
-    // Memory cache to avoid repeated API calls (500 entries)
+    // Memory cache implemented as LruCache to prevent redundant API calls for previously translated strings, bounded to 500 entries to manage memory footprint.
     private static LruCache<String, String> translationCache = new LruCache<>(500);
     private static final Object cacheLock = new Object();
 
@@ -56,9 +56,10 @@ public class HookMain implements IXposedHookLoadPackage {
         translationCache = mockCache;
     }
 
-    // Thread pool for async translation (prevents UI blocking)
+    // Thread pool for async translation to ensure network requests do not block the UI thread, providing a smooth user experience.
     private static final ExecutorService executor = Executors.newFixedThreadPool(3);
 
+    // ThreadLocal flag used as a recursion guard specifically for StaticLayout hooks to avoid StackOverflowErrors.
     private static final ThreadLocal<Boolean> isTranslatingStaticLayout = new ThreadLocal<>();
 
     // Main thread handler for UI updates
@@ -85,6 +86,7 @@ public class HookMain implements IXposedHookLoadPackage {
 
     @Override
     public void handleLoadPackage(LoadPackageParam lpparam) throws Throwable {
+        // Step 1: Early Exit. Ignore system-level packages and the module itself to prevent bootloops and unintended behavior.
         if (BLACKLISTED_PACKAGES.contains(lpparam.packageName) ||
             lpparam.packageName.equals("android") ||
             lpparam.packageName.startsWith("com.android.") ||
@@ -92,16 +94,17 @@ public class HookMain implements IXposedHookLoadPackage {
             return; // Exclude system framework, system apps, manager apps, and the module itself
         }
 
-        // 1. Initialize and reload XSharedPreferences
+        // Step 2: Initialize Preferences. Load user configurations from SharedPreferences securely.
         if (prefs == null) {
-            // Initialize with your EXACT module package name
+            // Initialize with exact module package name for cross-process readability.
             prefs = new XSharedPreferences(PREFS_PKG, PREFS_NAME);
             prefs.makeWorldReadable();
         } else {
+            // Reload preferences to pick up any dynamic user changes.
             prefs.reload();
         }
 
-        // 2. Fetch configurations
+        // Step 3: Fetch Configuration Data (API Keys, Service Provider, Target Language).
         String service = prefs.getString("service_provider", "Gemini");
         String apiKeyKey = service.equals("Gemini") ? "gemini_api_key" : "microsoft_api_key";
         String backupKeyKey = service.equals("Gemini") ? "gemini_api_key_backup" : "microsoft_api_key_backup";
@@ -124,7 +127,7 @@ public class HookMain implements IXposedHookLoadPackage {
 
         String targetLanguage = prefs.getString("target_lang", "en");
 
-        // 3. Dynamic Package Filtering
+        // Step 4: Validate Configuration. If no primary API key is available, exit early.
         if (apiKey.isEmpty()) {
             XposedBridge.log("LingoCloud: No API key configured. Bypassing.");
             return;
@@ -140,10 +143,12 @@ public class HookMain implements IXposedHookLoadPackage {
             return; // Target app is not in the user's whitelist. Bypass.
         }
 
-        // 4. Pass configuration to the Translator
+        // Step 5: Initialize the translation engine with the latest configuration.
         GeminiTranslator.setConfiguration(service, apiKey, backupApiKey, targetLanguage);
 
         XposedBridge.log(TAG + ": Hooking package " + lpparam.packageName);
+
+        // Step 6: Apply all UI and System hooks dynamically across various view types and structures.
 
         // Hook 1: Standard TextView.setText() - Most common method
         hookTextViewSetText(lpparam);
