@@ -1,23 +1,15 @@
-name: LingoCloud Combined Build & Release
+name: Android Build & Release
 
 on:
   push:
-    branches: [ "main", "develop" ]
-    tags: [ 'v*' ]
+    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  workflow_dispatch:
 
 jobs:
   build:
-    name: Build and Release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-      ANDROID_HOME: /usr/local/lib/android/sdk
 
     steps:
       - name: Checkout Code
@@ -26,54 +18,50 @@ jobs:
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
           java-version: '17'
+          distribution: 'temurin'
           cache: gradle
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          api-level: 35
-          build-tools: 35.0.0
-
-      - name: Ensure SDK paths
-        run: |
-          echo "${ANDROID_HOME}/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "${ANDROID_HOME}/platform-tools" >> $GITHUB_PATH
-          echo "${ANDROID_HOME}/build-tools/35.0.0" >> $GITHUB_PATH
-
-      - name: Grant execute to gradlew
+      - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       # 1. Build the APK
       - name: Build APK (Release)
         run: ./gradlew assembleRelease --no-daemon
 
-      # 2. Sign the APK (Fixes the 29.0.3 error)
+      # 2. Sign the APK
+      - name: Decode Keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > app/build/outputs/apk/release/signingKey.jks
+
       - name: Sign APK
-        uses: r0adkll/sign-android-release@v1
         id: sign_app
+        run: |
+          /usr/local/lib/android/sdk/build-tools/35.0.0/apksigner sign \
+            --ks app/build/outputs/apk/release/signingKey.jks \
+            --ks-key-alias ${{ secrets.ALIAS }} \
+            --ks-pass pass:${{ secrets.KEYSTORE_PASSWORD }} \
+            --key-pass pass:${{ secrets.KEY_PASSWORD }} \
+            --out app/build/outputs/apk/release/app-release-signed.apk \
+            app/build/outputs/apk/release/app-release-unsigned-aligned.apk
+
+      - name: Upload Signed APK Artifact
+        uses: actions/upload-artifact@v4
         with:
-          releaseDirectory: app/build/outputs/apk/release
-          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
-          alias: ${{ secrets.ALIAS }}
-          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-        env:
-          BUILD_TOOLS_VERSION: "35.0.0"
+          name: LingoCloud-Signed-APK
+          path: app/build/outputs/apk/release/app-release-signed.apk
 
       # 3. Build JAR/Other Artifacts
       - name: Build Other Artifacts
         run: ./gradlew build -x test
 
-      # 4. Upload Artifacts (The Zip)
-      - name: Upload Build Artifacts
+      # 4. Upload All Build Artifacts
+      - name: Upload Build Package
         uses: actions/upload-artifact@v4
         with:
-          name: LingoCloud-Package
+          name: LingoCloud-Complete-Package
           path: |
             **/build/libs/*.jar
-            ${{ steps.sign_app.outputs.signedReleaseFile }}
+            app/build/outputs/apk/release/app-release-signed.apk
 
       # 5. Create GitHub Release
       - name: Create GitHub Release
@@ -85,7 +73,7 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            ${{ steps.sign_app.outputs.signedReleaseFile }}
+            app/build/outputs/apk/release/app-release-signed.apk
             **/build/libs/*.jar
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
